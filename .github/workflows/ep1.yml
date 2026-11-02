@@ -1,0 +1,83 @@
+name: ep1-witch-cat
+
+on:
+  workflow_dispatch:
+    inputs:
+      witch_id: { default: 1ceiLOVFyYHs4uF5WIFf88RhegzyyFvx2 }
+      cat_id: { default: 1FQjf5_b4i5UcT97CzYVY6JyvCl_wy2oB }
+      spp: { default: "16" }
+      parts: { description: "JSON list of chunk indices to render (0-9)", default: "[0,1,2,3,4,5,6,7,8,9]" }
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BLENDER_VERSION: "4.3.2"
+  NFR: 810
+  CHUNKS: 10
+  SHOTS: "S1:1:52 S2:53:150 S3:151:270 S4a:271:345 S4b:346:420 S5:421:570 S6:571:720 S7:721:810"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - id: c
+        uses: actions/cache@v4
+        with: { path: ~/ep1, key: "ep1-assets-${{ inputs.witch_id }}-${{ inputs.cat_id }}-v1" }
+      - if: steps.c.outputs.cache-hit != 'true'
+        run: |
+          set -e; mkdir -p ~/ep1; cd ~/ep1
+          g() { curl -fsSL --retry 3 -o "$2" "https://drive.usercontent.google.com/download?id=$1&export=download&confirm=t"; }
+          g ${{ inputs.witch_id }} witch.blend; g ${{ inputs.cat_id }} cat.blend
+          for h in small_harbour_sunset golden_bay victoria_sunset; do curl -fsSL --retry 3 -o $h.hdr https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/${h}_2k.hdr; done
+          ls -la; head -c 12 witch.blend; echo; head -c 12 cat.blend; echo
+
+  render:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.parts) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with: { path: ~/ep1, key: "ep1-assets-${{ inputs.witch_id }}-${{ inputs.cat_id }}-v1", fail-on-cache-miss: true }
+      - uses: actions/cache/restore@v4
+        with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
+      - name: Render chunk
+        env: { SPP: "${{ inputs.spp }}" }
+        run: |
+          sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
+          CH=$(( (NFR + CHUNKS - 1) / CHUNKS )); S=$(( ${{ matrix.part }} * CH + 1 )); E=$(( S + CH - 1 )); [ $E -gt $NFR ] && E=$NFR
+          echo "chunk $S-$E"; mkdir -p frames; T0=$(date +%s); RC=0
+          for sh in $SHOTS; do
+            IFS=: read N A B <<< "$sh"
+            [ $B -lt $S ] || [ $A -gt $E ] && continue
+            echo "== $N $S-$E"
+            ~/blender/blender -b ~/ep1/witch.blend -P render/episode.py -- $PWD/frames ~/ep1 $N $S $E 2>&1 | grep -E "Fra:.*Finished|Saved|Error|Traceback|RENDER|WITCH|HEAD TOP|File \"|line [0-9]" | tail -80 || true
+          done
+          echo "chunk ${{ matrix.part }} seconds $(( $(date +%s) - T0 )) frames $(ls frames/*.png 2>/dev/null | wc -l) of $(( E - S + 1 ))" | tee frames/time_${{ matrix.part }}.txt
+          [ $(ls frames/f_*.png 2>/dev/null | wc -l) -eq $(( E - S + 1 )) ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "ep1-frames-${{ matrix.part }}", path: frames/, retention-days: 2 }
+
+  assemble:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: "ep1-frames-*", path: frames, merge-multiple: true }
+      - run: |
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg fonts-dejavu-core >/dev/null
+          pip install -q edge-tts
+          cat frames/time_*.txt; ls frames/f_*.png | wc -l
+          python3 tools/ep1_assemble.py $PWD/frames $PWD/ep1_witch_cat.mp4
+      - uses: actions/upload-artifact@v4
+        with: { name: ep1_video, path: ep1_witch_cat.mp4, retention-days: 2 }
