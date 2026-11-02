@@ -1,0 +1,9 @@
+1745581 length_estimator/model/finest.tar
+2232 rvq_nq6_dc512_nc512_noshare_qdp0.2/meta/mean.npy
+2232 rvq_nq6_dc512_nc512_noshare_qdp0.2/meta/std.npy
+84070519 rvq_nq6_dc512_nc512_noshare_qdp0.2/model/net_best_fid.tar
+687 rvq_nq6_dc512_nc512_noshare_qdp0.2/opt.txt
+55933307 t2m_nlayer8_nhead6_ld384_ff1024_cdp0.1_rvq6ns/model/latest.tar
+576 t2m_nlayer8_nhead6_ld384_ff1024_cdp0.1_rvq6ns/opt.txt
+61196511 tres_nlayer8_ld384_ff1024_rvq6ns_cdp0.2_sw/model/net_best_fid.tar
+601 tres_nlayer8_ld384_ff1024_rvq6ns_cdp0.2_sw/opt.txt

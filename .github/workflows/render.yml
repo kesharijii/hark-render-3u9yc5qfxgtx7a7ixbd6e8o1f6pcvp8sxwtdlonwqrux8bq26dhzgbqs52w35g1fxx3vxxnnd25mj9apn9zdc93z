@@ -1,0 +1,240 @@
+name: render
+
+on:
+  workflow_dispatch:
+    inputs:
+      story:
+        description: story folder under stories/
+        default: ""
+      parts:
+        description: number of parallel render jobs (max 6)
+        default: "6"
+      res:
+        description: render resolution (WxH, upscaled to 1080x1920)
+        default: 540x960
+      spp:
+        description: Cycles samples per pixel (OIDN denoised)
+        default: "16"
+      fps:
+        description: rendered frame rate (interpolated to 30)
+        default: "15"
+      only_part:
+        description: render just this part index (empty = all parts)
+        default: ""
+      reuse_run:
+        description: run id whose motion and frames-* artifacts are reused (empty = none)
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: render
+  cancel-in-progress: false
+
+env:
+  BLENDER_VERSION: "4.3.2"
+  MPFB_COMMIT: 6ff1eb358f6c1959ced77e79e6dd2406d9a71f49
+  MOMASK_COMMIT: 94a6636
+  MH_ASSETS: https://files2.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip
+
+jobs:
+  motion:
+    name: motion (MoMask text-to-motion)
+    if: ${{ inputs.reuse_run == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Cache MoMask checkpoints, CLIP and pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/momask-ckpt
+            ~/.cache/clip
+            ~/.cache/pip
+          key: momask-${{ env.MOMASK_COMMIT }}-v1
+      - name: Install MoMask (CPU torch)
+        run: |
+          git clone https://github.com/EricGuo5513/momask-codes.git ~/momask
+          cd ~/momask && git checkout ${{ env.MOMASK_COMMIT }}
+          git apply $GITHUB_WORKSPACE/motion/momask.patch
+          python -m pip install --upgrade pip
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install einops scipy numpy==1.26.4 tqdm ftfy regex "vector-quantize-pytorch==1.6.30" matplotlib trimesh gdown "git+https://github.com/openai/CLIP.git"
+      - name: Fetch checkpoints (HF mirror of the official files, Google Drive fallback)
+        run: |
+          set -e
+          C=~/momask-ckpt/t2m
+          B=https://huggingface.co/spaces/Jack06172004/3D_Gen/resolve/main/MoMask-hf/checkpoints/t2m
+          while read -r size path; do
+            f=$C/$path
+            if [ -f "$f" ] && [ "$(stat -c %s "$f")" = "$size" ]; then continue; fi
+            mkdir -p "$(dirname "$f")"
+            curl -fsSL --retry 3 -o "$f" "$B/$path" || true
+            if [ ! -f "$f" ] || [ "$(stat -c %s "$f")" != "$size" ]; then echo "mirror failed for $path"; touch ~/need_gdrive; fi
+          done < motion/checkpoints.txt
+          if [ -f ~/need_gdrive ]; then
+            cd ~/momask-ckpt/t2m && gdown 1vXS7SHJBgWPt59wupQ5UUzhFObrnGkQ0 -O m.zip && unzip -oq m.zip && rm m.zip
+          fi
+          mkdir -p ~/momask/checkpoints && ln -sfn ~/momask-ckpt/t2m ~/momask/checkpoints/t2m
+          ls -laR ~/momask-ckpt/t2m | head -40
+      - name: Generate motions (3 takes per prompt, auto-pick)
+        run: |
+          cd ~/momask
+          python gen_t2m.py --gpu_id -1 --ext ci --repeat_times 3 --seed 7 --text_path $GITHUB_WORKSPACE/stories/${{ inputs.story }}/prompts.txt \
+            --name t2m_nlayer8_nhead6_ld384_ff1024_cdp0.1_rvq6ns --res_name tres_nlayer8_ld384_ff1024_rvq6ns_cdp0.2_sw
+          python $GITHUB_WORKSPACE/motion/pick.py generation/ci $GITHUB_WORKSPACE/motion/out $GITHUB_WORKSPACE/stories/${{ inputs.story }}/names.txt
+          ls -la $GITHUB_WORKSPACE/motion/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: motion
+          path: motion/out/
+          retention-days: 1
+
+  assets:
+    name: assets (Blender + MakeHuman CC0, cached once)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Cache Blender + MakeHuman assets
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/blender
+            ~/mhdata
+          key: blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1
+      - name: Download Blender 4.3.2 linux-x64 and MakeHuman CC0 system assets
+        run: |
+          set -e
+          dl() { # the MakeHuman file server throttles each connection to ~110 KB/s, so fetch with parallel ranges
+            command -v aria2c >/dev/null || sudo apt-get install -y -q --no-install-recommends aria2 >/dev/null
+            aria2c -q -x 16 -s 16 -k 4M --max-tries=5 --retry-wait=5 -d "$(dirname "$2")" -o "$(basename "$2")" "$1"
+          }
+          if [ ! -x ~/blender/blender ]; then
+            V=${{ env.BLENDER_VERSION }}
+            curl -fsSL --retry 3 -o /tmp/b.tar.xz https://download.blender.org/release/Blender${V%.*}/blender-$V-linux-x64.tar.xz
+            mkdir -p ~/blender && tar -xJf /tmp/b.tar.xz -C ~/blender --strip-components=1 && rm /tmp/b.tar.xz
+          fi
+          if [ ! -d ~/mhdata/skins ]; then
+            dl ${{ env.MH_ASSETS }} /tmp/sys.zip
+            mkdir -p ~/mhdata && unzip -q /tmp/sys.zip -d ~/mhdata && rm /tmp/sys.zip
+          fi
+          ~/blender/blender --version | head -1
+          du -sh ~/blender ~/mhdata
+
+  render:
+    name: render part ${{ matrix.part }}
+    needs: [motion, assets]
+    if: ${{ !cancelled() && needs.assets.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        part: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download motions (falls back to committed clips if the motion job failed)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: motion
+          path: motion/out
+          run-id: ${{ inputs.reuse_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Cache Blender + MakeHuman assets
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/blender
+            ~/mhdata
+          key: blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1
+      - name: Install Blender (official linux-x64 build, has OpenImageDenoise), MPFB2 and MakeHuman CC0 assets
+        run: |
+          set -e
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6 >/dev/null
+          dl() { # the MakeHuman file server throttles each connection to ~110 KB/s, so fetch with parallel ranges
+            command -v aria2c >/dev/null || sudo apt-get install -y -q --no-install-recommends aria2 >/dev/null
+            aria2c -q -x 16 -s 16 -k 4M --max-tries=5 --retry-wait=5 -d "$(dirname "$2")" -o "$(basename "$2")" "$1"
+          }
+          if [ ! -x ~/blender/blender ]; then
+            V=${{ env.BLENDER_VERSION }}
+            curl -fsSL --retry 3 -o /tmp/b.tar.xz https://download.blender.org/release/Blender${V%.*}/blender-$V-linux-x64.tar.xz
+            mkdir -p ~/blender && tar -xJf /tmp/b.tar.xz -C ~/blender --strip-components=1 && rm /tmp/b.tar.xz
+          fi
+          if [ ! -d ~/mhdata/skins ]; then
+            dl ${{ env.MH_ASSETS }} /tmp/sys.zip
+            mkdir -p ~/mhdata && unzip -q /tmp/sys.zip -d ~/mhdata && rm /tmp/sys.zip
+          fi
+          git clone https://github.com/makehumancommunity/mpfb2.git ~/mpfb2 && git -C ~/mpfb2 checkout ${{ env.MPFB_COMMIT }}
+          E=~/.config/blender/4.3/extensions/user_default; mkdir -p $E && cp -r ~/mpfb2/src/mpfb $E/
+          D=~/.config/blender/4.3/extensions/.user/user_default/mpfb; mkdir -p $D && ln -sfn ~/mhdata $D/data
+          ~/blender/blender --version | head -1
+          ls ~/mhdata | head
+      - name: Render frames
+        run: |
+          mkdir -p frames
+          P=${{ inputs.parts }}
+          if [ ${{ matrix.part }} -ge $P ]; then echo "part not used"; exit 0; fi
+          if [ -n "${{ inputs.only_part }}" ] && [ "${{ inputs.only_part }}" != "${{ matrix.part }}" ]; then echo "part reused"; exit 0; fi
+          /usr/bin/time -v ~/blender/blender -b --factory-startup --python stories/${{ inputs.story }}/scene.py -- \
+            --part ${{ matrix.part }} --parts $P --res ${{ inputs.res }} --samples ${{ inputs.spp }} --fps ${{ inputs.fps }} \
+            --out frames 2>&1 | grep -E "FRAME|BUILD|FRAMING|REPORT|Error|Traceback|MISSING|FAIL|OIDN|Elapsed|Maximum resident" || true
+          test -f frames/report_part${{ matrix.part }}.json
+          ls frames | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frames-${{ matrix.part }}
+          path: frames/
+          retention-days: 1
+          compression-level: 0
+
+  join:
+    name: join + audio + captions + QA
+    needs: render
+    if: ${{ !cancelled() && needs.render.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reuse frames from an earlier run
+        if: ${{ inputs.reuse_run != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: frames-*
+          path: frames
+          merge-multiple: true
+          run-id: ${{ inputs.reuse_run }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: frames-*
+          path: frames
+          merge-multiple: true
+      - name: Install ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg >/dev/null && ffmpeg -version | head -1
+      - name: Join, interpolate, upscale, captions, audio, loudness
+        run: bash tools/join.sh stories/${{ inputs.story }} ${{ inputs.fps }}
+      - name: QA
+        run: python3 tools/qa.py out/final.mp4 stories/${{ inputs.story }} out
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: final
+          path: out/final.mp4
+          retention-days: 3
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa
+          path: |
+            out/qa.json
+            out/contact.jpg
+            out/render_reports.json
+          retention-days: 3
