@@ -1,7 +1,7 @@
 # Host test: 5-second idle/wave/blink/talk clip of the rigged host character.
 # Usage: blender -b host.blend -P host_test.py -- OUTDIR HDRI START END [inspect]
 import bpy, sys, math, os, re
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 OUT, HDRI, START, END = argv[0], argv[1], int(argv[2]), int(argv[3])
@@ -130,6 +130,78 @@ for o in bpy.data.objects:
         for f, v in ((F0, 0.2), (12, 0.6), (F1, 0.5)):
             k.value = v; k.keyframe_insert('value', frame=f)
 
+
+# ---------- outfit swap: fit an external bikini onto the body ----------
+BIKINI = os.environ.get('BIKINI', '')
+if BIKINI and os.path.exists(BIKINI) and arm:
+    for o in bpy.data.objects:
+        if o.name in ('hat', 'Corset', 'top', 'bra', 'skirt'):
+            o.hide_render = True; o.hide_viewport = True
+    body = bpy.data.objects['chubby_body']
+    with bpy.data.libraries.load(BIKINI, link=False) as (src, dst):
+        dst.objects = [n for n in src.objects if n == os.environ.get('BIKINI_OBJ', 'Classic_Halter_Neck_Bikini_Set')]
+    bk = dst.objects[0]; sc.collection.objects.link(bk)
+    bk.parent = None; bk.hide_render = False; bk.hide_viewport = False
+    for m in list(bk.modifiers): bk.modifiers.remove(m)
+    arm.data.pose_position = 'REST'
+    bpy.context.view_layer.update()
+    mw = bk.matrix_world.copy()
+    for v in bk.data.vertices: v.co = mw @ v.co
+    bk.matrix_world = Matrix.Identity(4)
+    # split loose parts into top / bottom by height
+    import bmesh
+    bm = bmesh.new(); bm.from_mesh(bk.data); bm.verts.ensure_lookup_table()
+    seen = set(); parts = []
+    for v in bm.verts:
+        if v.index in seen: continue
+        stack = [v]; comp = []; seen.add(v.index)
+        while stack:
+            x = stack.pop(); comp.append(x.index)
+            for e in x.link_edges:
+                y = e.other_vert(x)
+                if y.index not in seen: seen.add(y.index); stack.append(y)
+        parts.append(comp)
+    zs = [v.co.z for v in bm.verts]; zmid = (min(zs) + max(zs)) / 2
+    def cen(ids): 
+        c = Vector(); 
+        for i in ids: c += bm.verts[i].co
+        return c / len(ids)
+    top_ids = [i for p in parts if cen(p).z > zmid for i in p]
+    bot_ids = [i for p in parts if cen(p).z <= zmid for i in p]
+    print('BIKINI parts', len(parts), 'top verts', len(top_ids), 'bottom verts', len(bot_ids))
+    def bone_head(n):
+        b = arm.data.bones.get(n); return arm.matrix_world @ b.head_local if b else None
+    bl, br = bone_head('ORG-breast.L'), bone_head('ORG-breast.R')
+    tl, tr = bone_head('ORG-thigh.L'), bone_head('ORG-thigh.R')
+    chest = (bl + br) / 2; hip = (tl + tr) / 2
+    tc, bc = cen(top_ids), cen(bot_ids)
+    s_ = (chest.z - hip.z) / max(1e-4, (tc.z - bc.z))
+    print('FIT chest', chest, 'hip', hip, 'scale', s_)
+    for ids, src_c, dst_c in ((top_ids, tc, chest), (bot_ids, bc, hip)):
+        for i in ids:
+            co = (bm.verts[i].co - src_c) * s_
+            co.x *= 1.12; co.y *= 1.12
+            bm.verts[i].co = dst_c + co
+    bm.to_mesh(bk.data); bm.free()
+    def apply(mod):
+        with bpy.context.temp_override(object=bk, active_object=bk, selected_objects=[bk], selected_editable_objects=[bk]):
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+    sw = bk.modifiers.new('SW', 'SHRINKWRAP'); sw.target = body; sw.wrap_method = 'NEAREST_SURFACEPOINT'
+    sw.wrap_mode = 'OUTSIDE_SURFACE'; sw.offset = 0.004 * max(1.0, s_)
+    apply(sw)
+    sm = bk.modifiers.new('SM', 'CORRECTIVE_SMOOTH'); sm.iterations = 4; apply(sm)
+    sw = bk.modifiers.new('SW2', 'SHRINKWRAP'); sw.target = body; sw.wrap_method = 'NEAREST_SURFACEPOINT'
+    sw.wrap_mode = 'OUTSIDE'; sw.offset = 0.003 * max(1.0, s_); apply(sw)
+    sol = bk.modifiers.new('SOL', 'SOLIDIFY'); sol.thickness = 0.002; sol.offset = 1
+    dt = bk.modifiers.new('DT', 'DATA_TRANSFER'); dt.object = body
+    dt.use_vert_data = True; dt.data_types_verts = {'VGROUP_WEIGHTS'}; dt.vert_mapping = 'POLYINTERP_NEAREST'
+    with bpy.context.temp_override(object=bk, active_object=bk, selected_objects=[bk], selected_editable_objects=[bk]):
+        bpy.ops.object.datalayout_transfer(modifier='DT')
+    apply(dt)
+    am = bk.modifiers.new('ARM', 'ARMATURE'); am.object = arm
+    arm.data.pose_position = 'POSE'
+    print('BIKINI fitted, vgroups', len(bk.vertex_groups))
+
 # ---------- camera ----------
 target = None
 if arm and pb('head'):
@@ -168,9 +240,6 @@ if MODE == 'full':
     piv.rotation_euler = (0, 0, math.radians(360)); piv.keyframe_insert('rotation_euler', frame=F1 + 1)
     for fc in piv.animation_data.action.fcurves:
         for k in fc.keyframe_points: k.interpolation = 'LINEAR'
-    # rim/key lights follow the camera so she is lit from every side
-    for n in ('Key', 'Rim', 'Fill'):
-        L = bpy.data.objects[n]; wm = L.matrix_world.copy(); L.parent = piv; L.matrix_parent_inverse = piv.matrix_world.inverted()
 
 # ---------- light: golden-hour HDRI + warm key + rim ----------
 w = bpy.data.worlds.new('Golden'); sc.world = w; w.use_nodes = True
@@ -189,6 +258,10 @@ def area(name, loc, energy, color, size):
 area('Key', target + Vector((-height * 0.9, -height * 0.9, height * 0.35)), 250 * height, (1.0, 0.82, 0.62), height * 0.6)
 area('Rim', target + Vector((height * 0.8, height * 0.9, height * 0.4)), 300 * height, (1.0, 0.7, 0.45), height * 0.4)
 area('Fill', target + Vector((height * 1.0, -height * 0.8, 0)), 60 * height, (0.75, 0.85, 1.0), height * 0.8)
+if MODE == 'full':
+    piv = bpy.data.objects['Orbit']
+    for n in ('Key', 'Rim', 'Fill'):
+        L = bpy.data.objects[n]; L.parent = piv; L.matrix_parent_inverse = piv.matrix_world.inverted()
 
 # ---------- render settings ----------
 sc.render.engine = 'CYCLES'

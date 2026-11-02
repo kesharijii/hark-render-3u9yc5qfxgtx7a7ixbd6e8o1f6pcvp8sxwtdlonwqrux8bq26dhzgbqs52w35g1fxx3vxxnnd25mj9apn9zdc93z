@@ -9,6 +9,9 @@ on:
       spp:
         description: Cycles samples (OIDN denoised)
         default: "32"
+      bikini_id:
+        description: Drive id of an outfit .blend to fit (empty = keep original outfit)
+        default: ""
       mode:
         description: wave (close-up wave) or full (full-body orbit)
         default: wave
@@ -34,7 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/host
-          key: host-${{ inputs.drive_id }}-v1
+          key: host-${{ inputs.drive_id }}-${{ inputs.bikini_id }}-v1
       - name: Download host model + HDRI
         if: steps.hc.outputs.cache-hit != 'true'
         run: |
@@ -42,6 +45,7 @@ jobs:
           mkdir -p ~/host
           curl -fsSL --retry 3 -o ~/host/host.blend "https://drive.usercontent.google.com/download?id=${{ inputs.drive_id }}&export=download&confirm=t"
           curl -fsSL --retry 3 -o ~/host/sky.hdr "${{ env.HDRI }}"
+          if [ -n "${{ inputs.bikini_id }}" ]; then curl -fsSL --retry 3 -o ~/host/outfit.blend "https://drive.usercontent.google.com/download?id=${{ inputs.bikini_id }}&export=download&confirm=t"; fi
           ls -la ~/host; head -c 12 ~/host/host.blend; echo
       - name: Cache Blender
         uses: actions/cache@v4
@@ -65,11 +69,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache/restore@v4
-        with: { path: ~/host, key: "host-${{ inputs.drive_id }}-v1", fail-on-cache-miss: true }
+        with: { path: ~/host, key: "host-${{ inputs.drive_id }}-${{ inputs.bikini_id }}-v1", fail-on-cache-miss: true }
       - uses: actions/cache/restore@v4
         with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
       - name: Inspect + still
-        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}" }
+        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}", BIKINI: "/home/runner/host/outfit.blend" }
         run: |
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
           ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/out ~/host/sky.hdr 1 9999 inspect 2>&1 | tee out_inspect.log | grep -v "^Fra:" | tail -400
@@ -89,11 +93,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache/restore@v4
-        with: { path: ~/host, key: "host-${{ inputs.drive_id }}-v1", fail-on-cache-miss: true }
+        with: { path: ~/host, key: "host-${{ inputs.drive_id }}-${{ inputs.bikini_id }}-v1", fail-on-cache-miss: true }
       - uses: actions/cache/restore@v4
         with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
       - name: Render frames
-        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}" }
+        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}", BIKINI: "/home/runner/host/outfit.blend" }
         run: |
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
           T=$(( ${{ inputs.secs }} * 15 )); CH=$(( (T + 5) / 6 )); S=$(( ${{ matrix.part }} * CH + 1 )); E=$(( S + CH - 1 ))
