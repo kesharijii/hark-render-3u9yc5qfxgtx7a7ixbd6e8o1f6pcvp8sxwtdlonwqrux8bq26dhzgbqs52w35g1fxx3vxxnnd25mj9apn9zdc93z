@@ -135,7 +135,7 @@ for o in bpy.data.objects:
 BIKINI = os.environ.get('BIKINI', '')
 if BIKINI and os.path.exists(BIKINI) and arm:
     for o in bpy.data.objects:
-        if o.name in ('hat', 'Corset', 'top', 'bra', 'skirt'):
+        if o.name in ('hat', 'Corset', 'top', 'skirt') or (o.name == 'bra' and os.environ.get('BIKINI_PARTS', 'all') == 'all'):
             o.hide_render = True; o.hide_viewport = True
     body = bpy.data.objects['chubby_body']
     with bpy.data.libraries.load(BIKINI, link=False) as (src, dst):
@@ -195,6 +195,8 @@ if BIKINI and os.path.exists(BIKINI) and arm:
         co.x *= 1.1; co.y *= 1.1
         bm.verts[i].co = hip + co
     s_ = max(s_top, s_bot)
+    if os.environ.get('BIKINI_PARTS', 'all') == 'bottom':
+        bmesh.ops.delete(bm, geom=[bm.verts[i] for i in top_ids], context='VERTS')
     bm.to_mesh(bk.data); bm.free()
     def apply(mod):
         with bpy.context.temp_override(object=bk, active_object=bk, selected_objects=[bk], selected_editable_objects=[bk]):

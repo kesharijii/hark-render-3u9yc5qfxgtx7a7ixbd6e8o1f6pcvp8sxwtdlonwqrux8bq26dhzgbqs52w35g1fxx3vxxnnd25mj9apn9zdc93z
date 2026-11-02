@@ -73,7 +73,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
       - name: Inspect + still
-        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}", BIKINI: "/home/runner/host/outfit.blend" }
+        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}", BIKINI: "/home/runner/host/outfit.blend", BIKINI_PARTS: "bottom" }
         run: |
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
           ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/out ~/host/sky.hdr 1 9999 inspect 2>&1 | tee out_inspect.log | grep -v "^Fra:" | tail -400
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
       - name: Render frames
-        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}", BIKINI: "/home/runner/host/outfit.blend" }
+        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}", BIKINI: "/home/runner/host/outfit.blend", BIKINI_PARTS: "bottom" }
         run: |
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
           T=$(( ${{ inputs.secs }} * 15 )); CH=$(( (T + 5) / 6 )); S=$(( ${{ matrix.part }} * CH + 1 )); E=$(( S + CH - 1 ))
