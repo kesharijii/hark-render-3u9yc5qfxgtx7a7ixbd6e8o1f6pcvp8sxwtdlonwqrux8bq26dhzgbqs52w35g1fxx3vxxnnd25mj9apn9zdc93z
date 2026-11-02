@@ -172,7 +172,7 @@ def cat_base(kind, f0, f1, speed=1.0):
         st = tr.strips.new('hold', f0 - 30, HOLD)
         st.action_frame_start, st.action_frame_end = 1, 2
         st.scale = 1; st.repeat = max(1.0, (f1 - f0 + 60))
-    st.extend_mode = 'HOLD'
+    st.extrapolation = 'HOLD'
     return st
 
 def cat_extras():
@@ -425,7 +425,13 @@ sc.render.filepath = os.path.join(OUT, 'f_')
 sc.frame_start, sc.frame_end = max(F0, START), min(F1, END)
 sc.render.use_persistent_data = True
 print('RENDER', SHOT, sc.frame_start, sc.frame_end)
-if os.environ.get('STILL'):
+if os.environ.get('DRY'):
+    sc.render.resolution_x, sc.render.resolution_y = 270, 480; sc.cycles.samples = 4
+    for k, fr in enumerate(os.environ['DRY'].split(',')):
+        fr = int(fr) if fr != 'mid' else (F0 + F1) // 2
+        sc.frame_set(fr); sc.render.filepath = os.path.join(OUT, f'dry_{SHOT}_{fr:04d}.png')
+        bpy.ops.render.render(write_still=True)
+elif os.environ.get('STILL'):
     sc.frame_set(int(os.environ['STILL'])); sc.render.filepath = os.path.join(OUT, f'still_{SHOT}.png')
     bpy.ops.render.render(write_still=True)
 else:

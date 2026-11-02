@@ -6,6 +6,7 @@ on:
       witch_id: { default: 1ceiLOVFyYHs4uF5WIFf88RhegzyyFvx2 }
       cat_id: { default: 1FQjf5_b4i5UcT97CzYVY6JyvCl_wy2oB }
       spp: { default: "16" }
+      check: { default: "no" }
       parts: { description: "JSON list of chunk indices to render (0-9)", default: "[0,1,2,3,4,5,6,7,8,9]" }
 
 permissions:
@@ -34,8 +35,34 @@ jobs:
           for h in small_harbour_sunset golden_bay victoria_sunset; do curl -fsSL --retry 3 -o $h.hdr https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/${h}_2k.hdr; done
           ls -la; head -c 12 witch.blend; echo; head -c 12 cat.blend; echo
 
+  check:
+    needs: fetch
+    if: inputs.check == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: [S1, S2, S3, S4a, S4b, S5, S6, S7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with: { path: ~/ep1, key: "ep1-assets-${{ inputs.witch_id }}-${{ inputs.cat_id }}-v1", fail-on-cache-miss: true }
+      - uses: actions/cache/restore@v4
+        with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
+      - run: |
+          sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
+          for sh in $SHOTS; do IFS=: read N A B <<< "$sh"; [ "$N" = "${{ matrix.shot }}" ] && break; done
+          F="$A,$(( (A + B) / 2 )),$B"
+          DRY=$F ~/blender/blender -b ~/ep1/witch.blend -P render/episode.py -- $PWD/out ~/ep1 ${{ matrix.shot }} $A $B 2>&1 | grep -E "Saved|Error|Traceback|RENDER|WITCH|HEAD TOP|File \"|line [0-9]|Warning" | tail -60
+          ls out/dry_*.png | wc -l; [ $(ls out/dry_*.png | wc -l) -eq 3 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "ep1-check-${{ matrix.shot }}", path: out/, retention-days: 1 }
+
   render:
     needs: fetch
+    if: inputs.check != 'yes'
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -68,6 +95,7 @@ jobs:
 
   assemble:
     needs: render
+    if: inputs.check != 'yes'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
