@@ -147,6 +147,9 @@ CR = bpy.data.objects.new('CatRoot', None); sc.collection.objects.link(CR)
 bpy.context.view_layer.update()
 mw = CA.matrix_world.copy(); CA.parent = CR; CA.matrix_world = mw
 CP = CA.pose.bones
+for psys in CM.particle_systems:
+    psys.use_hair_dynamics = False
+    print('PSYS', psys.name, 'dyn off')
 CAT_FOOT = 2.886  # model units from origin to paw bottom
 CAT_LEN = 10.0
 
@@ -278,12 +281,12 @@ if SHOT == 'S1':
     set_sun(60)
     wplace(F0, 0, 0); wboth(F0, 'relax'); whead(F0, (0, 0, 0)); whead(40, (-6, 0, -8)); whead(F1, (-8, 0, -10))
     breathe(F0, F1)
-    cat_base('hold', F0, F1); cat_place(F0, 2.6, 10, BIG, 20)
+    cat_base('hold', F0, F1); cat_place(F0, 1.6, 10, BIG, 20)
     ckey('Head', F0, (8, 0, 0)); ckey('Head', F1, (16, 0, -6))
     ckey('Tail', F0, (0, 0, 0)); ckey('Tail', 30, (0, 0, 12)); ckey('Tail', F1, (0, 0, -6))
-    camkey(F0, (0.9, -4.8, 0.55), (0.2, 3, 3.0), 22); camkey(F1, (0.75, -4.1, 0.6), (0.2, 3, 3.3), 22)
+    camkey(F0, (0.9, -5.2, 0.55), (0.6, 3, 3.0), 22); camkey(F1, (0.8, -4.5, 0.6), (0.6, 3, 3.3), 22)
     key_light((0, 0, H * 0.8), 3.0, side=-1)
-    area('CatFill', (8, 0, 8), (2.6, 10, 6), 20000, (1.0, 0.75, 0.5), 6)
+    area('CatFill', (8, 0, 8), (1.6, 10, 6), 5000, (1.0, 0.75, 0.5), 6)
 
 elif SHOT == 'S2':
     set_sun(60)
@@ -313,7 +316,7 @@ elif SHOT == 'S3':
     camkey(F0, (-1.6, -2.9, 0.8), (-0.6, -0.3, 0.5), 30); camkey(175, (-1.6, -3.4, 0.9), (-0.8, 0, 0.9), 30)
     camkey(250, (1.8, -9.5, 1.1), (-1.6, 4, 4.4), 22); camkey(F1, (1.9, -10.0, 1.1), (-1.6, 4, 4.8), 22)
     key_light((0, 0, H * 0.7), 3.0, side=-1)
-    area('CatFill', (6, -2, 9), (-2.6, 7.5, 6), 20000, (1.0, 0.75, 0.5), 6)
+    area('CatFill', (6, -2, 9), (-2.6, 7.5, 6), 5000, (1.0, 0.75, 0.5), 6)
 
 elif SHOT == 'S4a':
     set_sun(-120)
@@ -368,10 +371,10 @@ elif SHOT == 'S5':
         fw.location = pos; fw.rotation_euler = (R(720 * t), R(300 * t), 0)
         fw.keyframe_insert('location', frame=f); fw.keyframe_insert('rotation_euler', frame=f)
     sparkle(ft, 500, 540, 200, 0.005, 0.2, life=10)
-    camkey(F0, (3.6, -4.2, 1.3), (0.4, 4, 3.0), 22); camkey(500, (3.2, -3.6, 1.3), (0.4, 4, 3.2), 22)
+    camkey(F0, (3.4, -4.6, 1.3), (0.8, 4, 2.8), 22); camkey(500, (3.2, -3.6, 1.3), (0.4, 4, 3.2), 22)
     camkey(F1, (2.6, -3.4, 1.4), (-2.5, 6, 2.6), 22)
     key_light((0, 0, H * 0.8), 3.0, side=1)
-    area('CatFill', (7, 1, 9), (1.2, 7.5, 6), 22000, (1.0, 0.75, 0.5), 6)
+    area('CatFill', (7, 1, 9), (1.2, 7.5, 6), 5000, (1.0, 0.75, 0.5), 6)
 
 elif SHOT in ('S6', 'S7'):
     set_sun(60 if SHOT == 'S7' else 100)
@@ -401,17 +404,18 @@ elif SHOT in ('S6', 'S7'):
     if SHOT == 'S6':
         wboth(F0, 'relax'); wboth(590, 'up'); wboth(620, 'up'); wboth(640, 'relax'); warm(665, 'R', 'up'); warm(700, 'R', 'up'); warm(F1, 'R', 'relax')
         whead(F0, (-5, 0, 10)); whead(640, (-10, 0, -15)); whead(F1, (-8, 0, 20))
-        camkey(F0, (x0 + 5.5, -13.5, 6.0), (x0 + 5.0, 2, 10.0), 30)
-        camkey(F1, (x1 + 5.0, -12.0, 6.0), (x1 + 5.0, 2, 10.4), 30); lin(cam)
-        kl = key_light((x0 + 5, 2, 10), 12, side=-1)
+        tx = top.x; dx = x1 - x0
+        camkey(F0, (tx + 1.0, top.y - 10.0, top.z - 1.2), (tx, top.y, top.z + 0.9), 30)
+        camkey(F1, (tx + dx + 0.5, top.y - 8.5, top.z - 1.0), (tx + dx, top.y, top.z + 0.9), 30); lin(cam)
+        kl = key_light(top + Vector((0, 0, 1)), 6, side=-1)
         sc.frame_set(F0); bpy.context.view_layer.update()
         kl.parent = cam; kl.matrix_parent_inverse = cam.matrix_world.inverted()
     else:
         wboth(F0, 'relax'); wboth(762, 'relax'); wboth(774, 'shock'); wboth(790, 'up'); wboth(F1, 'up')
         whead(F0, (-5, 0, 0)); whead(762, (0, 0, 30)); whead(F1, (-15, 0, 35))
-        camkey(F0, (2.5, -9.0, 6.0), (0, 0, 9.5), 28); camkey(F1, (2.0, -7.6, 6.3), (0, 0, 9.8), 28)
+        camkey(F0, (top.x + 1.8, top.y - 6.5, top.z - 0.7), top + Vector((0, 0, 0.8)), 28); camkey(F1, (top.x + 1.5, top.y - 5.5, top.z - 0.6), top + Vector((0, 0, 0.9)), 28)
         shake(785, F1, 0.02)
-        key_light((0, 1, 9.5), 9, side=-1)
+        key_light(top + Vector((0, 0, 1)), 5, side=-1)
 
 # ---------------- render ----------------
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'

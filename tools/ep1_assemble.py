@@ -50,7 +50,7 @@ open('caps.ass', 'w').write('\n'.join(ass) + '\n')
 # video
 sh(f"ffmpeg -y -framerate {FPS} -start_number 1 -i '{FR}/f_%04d.png' -vf \"tpad=stop_mode=clone:stop_duration={FREEZE},"
    f"minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1:scd=fdiff:scd_threshold=8,scale=1080:1920:flags=lanczos,"
-   f"eq=saturation=1.1:contrast=1.04,subtitles=caps.ass\" -c:v libx264 -crf 18 -preset medium -pix_fmt yuv420p -an vid.mp4")
+   f"eq=saturation=1.1:contrast=1.04,colorbalance=rs=0.05:gs=0.01:bs=-0.06:rm=0.04:bm=-0.04,subtitles=caps.ass\" -c:v libx264 -crf 18 -preset medium -pix_fmt yuv420p -an vid.mp4")
 
 # audio: music box arpeggio + ocean + purr + car alarm + chimes + voice
 note = "261.63*(1+0.26*eq(mod(floor(t*4),8),1)+0.498*eq(mod(floor(t*4),8),2)+0.68*eq(mod(floor(t*4),8),3)+1*eq(mod(floor(t*4),8),4)+0.68*eq(mod(floor(t*4),8),5)+0.498*eq(mod(floor(t*4),8),6)+0.26*eq(mod(floor(t*4),8),7))"
