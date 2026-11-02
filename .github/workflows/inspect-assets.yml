@@ -1,0 +1,44 @@
+name: inspect-assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      witch_id:
+        default: 1ceiLOVFyYHs4uF5WIFf88RhegzyyFvx2
+      cat_id:
+        default: 1FQjf5_b4i5UcT97CzYVY6JyvCl_wy2oB
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BLENDER_VERSION: "4.3.2"
+  HDRI: https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/venice_sunset_2k.hdr
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        what: [cat, witch]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
+      - name: Fetch
+        run: |
+          set -e; mkdir -p ~/a
+          ID=${{ matrix.what == 'cat' && inputs.cat_id || inputs.witch_id }}
+          curl -fsSL --retry 3 -o ~/a/m.blend "https://drive.usercontent.google.com/download?id=$ID&export=download&confirm=t"
+          curl -fsSL --retry 3 -o ~/a/sky.hdr "${{ env.HDRI }}"
+          ls -la ~/a
+      - name: Inspect
+        run: |
+          ~/blender/blender -b ~/a/m.blend -P render/inspect_assets.py -- $PWD/out ~/a/sky.hdr ${{ matrix.what }} 2>&1 | grep -v "^Fra:" | tee log.txt | tail -200
+          mkdir -p out && cp log.txt out/log_${{ matrix.what }}.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "inspect-${{ matrix.what }}", path: out/, retention-days: 1 }
