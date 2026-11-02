@@ -1,0 +1,118 @@
+name: host-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      drive_id:
+        description: Google Drive file id of the host .blend (anyone-with-link)
+        default: 1ceiLOVFyYHs4uF5WIFf88RhegzyyFvx2
+      spp:
+        description: Cycles samples (OIDN denoised)
+        default: "32"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BLENDER_VERSION: "4.3.2"
+  HDRI: https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/venice_sunset_2k.hdr
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Cache host model
+        id: hc
+        uses: actions/cache@v4
+        with:
+          path: ~/host
+          key: host-${{ inputs.drive_id }}-v1
+      - name: Download host model + HDRI
+        if: steps.hc.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          mkdir -p ~/host
+          curl -fsSL --retry 3 -o ~/host/host.blend "https://drive.usercontent.google.com/download?id=${{ inputs.drive_id }}&export=download&confirm=t"
+          curl -fsSL --retry 3 -o ~/host/sky.hdr "${{ env.HDRI }}"
+          ls -la ~/host; head -c 12 ~/host/host.blend; echo
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/blender
+            ~/mhdata
+          key: blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1
+      - name: Ensure Blender
+        run: |
+          if [ ! -x ~/blender/blender ]; then
+            V=${{ env.BLENDER_VERSION }}
+            curl -fsSL --retry 3 -o /tmp/b.tar.xz https://download.blender.org/release/Blender${V%.*}/blender-$V-linux-x64.tar.xz
+            mkdir -p ~/blender && tar -xJf /tmp/b.tar.xz -C ~/blender --strip-components=1
+          fi
+
+  inspect:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with: { path: ~/host, key: "host-${{ inputs.drive_id }}-v1", fail-on-cache-miss: true }
+      - uses: actions/cache/restore@v4
+        with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
+      - name: Inspect + still
+        env: { SPP: "${{ inputs.spp }}" }
+        run: |
+          sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
+          ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/out ~/host/sky.hdr 1 75 inspect 2>&1 | tee out_inspect.log | grep -v "^Fra:" | tail -400
+          mkdir -p out && cp out_inspect.log out/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: inspect, path: out/, retention-days: 1 }
+
+  render:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with: { path: ~/host, key: "host-${{ inputs.drive_id }}-v1", fail-on-cache-miss: true }
+      - uses: actions/cache/restore@v4
+        with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
+      - name: Render frames
+        env: { SPP: "${{ inputs.spp }}" }
+        run: |
+          sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
+          S=$(( ${{ matrix.part }} * 25 + 1 )); E=$(( S + 24 ))
+          START=$(date +%s)
+          ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/frames ~/host/sky.hdr $S $E 2>&1 | grep -E "Fra:.*(Remaining|Finished)|Saved|Error|Traceback" | tail -60
+          echo "part ${{ matrix.part }} render seconds: $(( $(date +%s) - START ))" | tee frames/time_${{ matrix.part }}.txt
+          ls frames | wc -l
+      - uses: actions/upload-artifact@v4
+        with: { name: "frames-${{ matrix.part }}", path: frames/, retention-days: 1 }
+
+  join:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: "frames-*", path: frames, merge-multiple: true }
+      - name: Join 15->30 fps, upscale 1080x1920
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg >/dev/null
+          cat frames/time_*.txt
+          ls frames/*.png | wc -l
+          ffmpeg -y -framerate 15 -pattern_type glob -i 'frames/f_*.png' \
+            -vf "minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1,scale=1080:1920:flags=lanczos,eq=saturation=1.08:contrast=1.04" \
+            -c:v libx264 -crf 17 -preset slow -pix_fmt yuv420p -movflags +faststart host_test.mp4
+          ffprobe -v error -show_entries stream=width,height,r_frame_rate,nb_frames:format=duration -of default=nw=1 host_test.mp4
+      - uses: actions/upload-artifact@v4
+        with: { name: host_test, path: host_test.mp4, retention-days: 1 }
