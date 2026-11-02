@@ -53,15 +53,33 @@ if WHAT == 'cat':
     for m in bpy.data.materials:
         print('MAT', m.name, 'nodes' if m.use_nodes else 'no-nodes', [n.type for n in m.node_tree.nodes] if m.use_nodes else '')
     world(1.0)
-    setup(spp=16)
-    vis = [o for o in bpy.data.objects if o.type == 'MESH' and not o.hide_render]
-    lo, hi = bbox_all(vis)
+    setup(spp=24)
+    for n in ('Plane', 'Empty'):
+        if n in bpy.data.objects: bpy.data.objects[n].hide_render = True
+    catm = bpy.data.objects['Cat']
+    for p in catm.particle_systems:
+        st = p.settings
+        print('PSET', p.name, 'child', st.child_type, st.rendered_child_count, 'steps', st.render_step, 'mat', st.material_slot, 'shape', st.root_radius if hasattr(st,'root_radius') else '')
+    lo, hi = bbox_all([catm])
     c = (lo + hi) / 2; size = max(hi - lo)
     print('CAT bbox', lo, hi)
-    cam_at(c, size * 1.8, size * 0.25, lens=50, side=0.8)
-    for f in (sc.frame_start, (sc.frame_start + sc.frame_end) // 2):
+    arm = bpy.data.objects['Armature']
+    cam_at(c, size * 1.3, size * 0.1, lens=50, side=0.9)
+    for act, f in (('Walk', 1), ('Walk', 14), ('run', 8)):
+        arm.animation_data.action = bpy.data.actions[act]
         sc.frame_set(f)
-        sc.render.filepath = os.path.join(OUT, f'cat_f{f}.png')
+        sc.render.filepath = os.path.join(OUT, f'cat_{act}_{f}.png')
+        bpy.ops.render.render(write_still=True)
+    # head turn test
+    arm.animation_data.action = None
+    pb = arm.pose.bones
+    for b in pb: b.rotation_mode = 'XYZ'
+    for name, bn, rot in (('head_x30', 'Head', (30,0,0)), ('head_z30', 'Head', (0,0,30)), ('ear_x40', 'Ear', (40,0,0))):
+        for b in pb: b.rotation_euler = (0,0,0)
+        pb[bn].rotation_euler = tuple(math.radians(v) for v in rot)
+        if bn == 'Ear': pb['Ear.006'].rotation_euler = tuple(math.radians(v) for v in rot)
+        sc.frame_set(1)
+        sc.render.filepath = os.path.join(OUT, f'cat_{name}.png')
         bpy.ops.render.render(write_still=True)
 
 if WHAT == 'witch':

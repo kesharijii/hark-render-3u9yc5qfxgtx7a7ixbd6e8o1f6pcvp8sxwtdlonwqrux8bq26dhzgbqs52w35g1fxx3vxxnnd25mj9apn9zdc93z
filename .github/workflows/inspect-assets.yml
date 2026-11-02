@@ -5,6 +5,8 @@ on:
     inputs:
       witch_id:
         default: 1ceiLOVFyYHs4uF5WIFf88RhegzyyFvx2
+      which:
+        default: '["cat"]'
       cat_id:
         default: 1FQjf5_b4i5UcT97CzYVY6JyvCl_wy2oB
 
@@ -23,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        what: [cat, witch]
+        what: ${{ fromJSON(inputs.which) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache/restore@v4
