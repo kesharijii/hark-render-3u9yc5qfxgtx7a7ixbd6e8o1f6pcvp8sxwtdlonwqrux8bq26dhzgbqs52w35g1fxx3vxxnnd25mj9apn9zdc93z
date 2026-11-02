@@ -169,19 +169,32 @@ if BIKINI and os.path.exists(BIKINI) and arm:
     top_ids = [i for p in parts if cen(p).z > zmid for i in p]
     bot_ids = [i for p in parts if cen(p).z <= zmid for i in p]
     print('BIKINI parts', len(parts), 'top verts', len(top_ids), 'bottom verts', len(bot_ids))
-    def bone_head(n):
-        b = arm.data.bones.get(n); return arm.matrix_world @ b.head_local if b else None
-    bl, br = bone_head('ORG-breast.L'), bone_head('ORG-breast.R')
-    tl, tr = bone_head('ORG-thigh.L'), bone_head('ORG-thigh.R')
-    chest = (bl + br) / 2; hip = (tl + tr) / 2
+    def bone(n, tail=False):
+        b = arm.data.bones.get(n)
+        return (arm.matrix_world @ (b.tail_local if tail else b.head_local)) if b else None
+    # breast centre = between head (chest wall) and tail (tip) of each breast bone
+    bL = (bone('ORG-breast.L') + bone('ORG-breast.L', True)) / 2
+    bR = (bone('ORG-breast.R') + bone('ORG-breast.R', True)) / 2
+    chest = (bL + bR) / 2
+    hip = (bone('ORG-thigh.L') + bone('ORG-thigh.R')) / 2
+    hip.z += 0.02 * (bone('ORG-spine.003') - hip).length if bone('ORG-spine.003') else 0
+    top_parts = sorted([p for p in parts if cen(p).z > zmid], key=len, reverse=True)
+    cups = top_parts[:2]
+    c1, c2 = cen(cups[0]), cen(cups[1])
+    cup_mid = (c1 + c2) / 2
+    s_top = ((bL - bR).length / max(1e-4, (c1 - c2).length)) * 1.18
     tc, bc = cen(top_ids), cen(bot_ids)
-    s_ = (chest.z - hip.z) / max(1e-4, (tc.z - bc.z))
-    print('FIT chest', chest, 'hip', hip, 'scale', s_)
-    for ids, src_c, dst_c in ((top_ids, tc, chest), (bot_ids, bc, hip)):
-        for i in ids:
-            co = (bm.verts[i].co - src_c) * s_
-            co.x *= 1.12; co.y *= 1.12
-            bm.verts[i].co = dst_c + co
+    s_bot = (chest.z - hip.z) / max(1e-4, (tc.z - bc.z)) * 1.06
+    print('FIT chest', chest, 'hip', hip, 's_top', s_top, 's_bot', s_bot)
+    for i in top_ids:
+        co = (bm.verts[i].co - cup_mid) * s_top
+        co.x *= 1.08; co.y *= 1.15
+        bm.verts[i].co = chest + co
+    for i in bot_ids:
+        co = (bm.verts[i].co - bc) * s_bot
+        co.x *= 1.1; co.y *= 1.1
+        bm.verts[i].co = hip + co
+    s_ = max(s_top, s_bot)
     bm.to_mesh(bk.data); bm.free()
     def apply(mod):
         with bpy.context.temp_override(object=bk, active_object=bk, selected_objects=[bk], selected_editable_objects=[bk]):
@@ -201,6 +214,25 @@ if BIKINI and os.path.exists(BIKINI) and arm:
     am = bk.modifiers.new('ARM', 'ARMATURE'); am.object = arm
     arm.data.pose_position = 'POSE'
     print('BIKINI fitted, vgroups', len(bk.vertex_groups))
+
+# ---------- ground ----------
+_low = 1e9
+dg = bpy.context.evaluated_depsgraph_get()
+for o in bpy.data.objects:
+    if o.type == 'MESH' and not o.hide_render and not o.name.startswith('WGT'):
+        e = o.evaluated_get(dg)
+        for c in e.bound_box: _low = min(_low, (o.matrix_world @ Vector(c)).z)
+bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 0, _low))
+deck = bpy.context.active_object; deck.name = 'Deck'; deck.scale = (3, 30, 1)
+dm = bpy.data.materials.new('DeckWood'); dm.use_nodes = True
+bsdf = dm.node_tree.nodes['Principled BSDF']
+wave = dm.node_tree.nodes.new('ShaderNodeTexWave'); wave.wave_type = 'BANDS'; wave.inputs['Scale'].default_value = 6; wave.inputs['Distortion'].default_value = 3
+ramp = dm.node_tree.nodes.new('ShaderNodeValToRGB')
+ramp.color_ramp.elements[0].color = (0.18, 0.11, 0.06, 1); ramp.color_ramp.elements[1].color = (0.38, 0.25, 0.14, 1)
+dm.node_tree.links.new(wave.outputs['Fac'], ramp.inputs['Fac']); dm.node_tree.links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
+bsdf.inputs['Roughness'].default_value = 0.7
+deck.data.materials.append(dm)
+print('GROUND at', _low)
 
 # ---------- camera ----------
 target = None
