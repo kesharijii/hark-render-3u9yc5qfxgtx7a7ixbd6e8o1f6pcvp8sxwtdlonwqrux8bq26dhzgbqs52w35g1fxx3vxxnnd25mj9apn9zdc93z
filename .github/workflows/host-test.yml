@@ -9,6 +9,12 @@ on:
       spp:
         description: Cycles samples (OIDN denoised)
         default: "32"
+      mode:
+        description: wave (close-up wave) or full (full-body orbit)
+        default: wave
+      secs:
+        description: clip length in seconds (15 fps rendered, 30 fps out)
+        default: "5"
 
 permissions:
   contents: read
@@ -63,10 +69,10 @@ jobs:
       - uses: actions/cache/restore@v4
         with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
       - name: Inspect + still
-        env: { SPP: "${{ inputs.spp }}" }
+        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}" }
         run: |
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
-          ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/out ~/host/sky.hdr 1 75 inspect 2>&1 | tee out_inspect.log | grep -v "^Fra:" | tail -400
+          ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/out ~/host/sky.hdr 1 9999 inspect 2>&1 | tee out_inspect.log | grep -v "^Fra:" | tail -400
           mkdir -p out && cp out_inspect.log out/
       - uses: actions/upload-artifact@v4
         if: always()
@@ -79,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [0, 1, 2]
+        part: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache/restore@v4
@@ -87,10 +93,10 @@ jobs:
       - uses: actions/cache/restore@v4
         with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1", fail-on-cache-miss: true }
       - name: Render frames
-        env: { SPP: "${{ inputs.spp }}" }
+        env: { SPP: "${{ inputs.spp }}", MODE: "${{ inputs.mode }}", SECS: "${{ inputs.secs }}" }
         run: |
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
-          S=$(( ${{ matrix.part }} * 25 + 1 )); E=$(( S + 24 ))
+          T=$(( ${{ inputs.secs }} * 15 )); CH=$(( (T + 5) / 6 )); S=$(( ${{ matrix.part }} * CH + 1 )); E=$(( S + CH - 1 ))
           START=$(date +%s)
           ~/blender/blender -b ~/host/host.blend -P render/host_test.py -- $PWD/frames ~/host/sky.hdr $S $E 2>&1 | grep -E "Fra:.*(Remaining|Finished)|Saved|Error|Traceback" | tail -60
           echo "part ${{ matrix.part }} render seconds: $(( $(date +%s) - START ))" | tee frames/time_${{ matrix.part }}.txt

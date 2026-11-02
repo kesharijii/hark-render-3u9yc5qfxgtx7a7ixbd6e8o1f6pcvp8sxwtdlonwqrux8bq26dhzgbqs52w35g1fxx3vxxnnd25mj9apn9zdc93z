@@ -56,9 +56,15 @@ def key_rot(bone, frame, euler):
     bone.rotation_euler = euler
     bone.keyframe_insert('rotation_euler', frame=frame)
 
+MODE = os.environ.get('MODE', 'wave')
+SECS = int(os.environ.get('SECS', '5'))
 FPS = 15
 sc.render.fps = FPS
-F0, F1 = 1, 5 * FPS
+F0, F1 = 1, SECS * FPS
+if MODE == 'full':
+    for o in bpy.data.objects:
+        if o.name in ('hat', 'Corset', 'top'):
+            o.hide_render = True; o.hide_viewport = True
 sc.frame_start, sc.frame_end = F0, F1
 
 if arm:
@@ -83,13 +89,20 @@ if arm:
         key_rot(head, f, e)
     for f, e in ((F0, (0, 0, 0)), (38, (math.radians(2), math.radians(4), 0)), (F1, (0, 0, 0))):
         key_rot(chest, f, e)
-    # right arm wave
-    up = (math.radians(-10), 0, math.radians(70))
-    for f, e in ((F0, (0, 0, math.radians(25))), (14, up), (F1 - 8, up), (F1, (0, 0, math.radians(25)))):
-        key_rot(ua, f, e)
-    for f in range(F0, F1 + 1, 5):
-        waving = 14 <= f <= F1 - 8
-        key_rot(fa, f, (math.radians(-90 if waving else -15), 0, math.radians((25 if (f // 5) % 2 else -10) if waving else 0)))
+    if MODE == 'full':
+        for f in (F0, F1):
+            key_rot(ua, f, (0, 0, math.radians(25)))
+            key_rot(fa, f, (math.radians(15), 0, 0))
+        # slow weight shift / sway
+        for f in range(F0, F1 + 1, 45):
+            key_rot(torso, f, (0, math.radians(3 if (f // 45) % 2 else -3), 0))
+    else:
+        up = (math.radians(-10), 0, math.radians(70))
+        for f, e in ((F0, (0, 0, math.radians(25))), (14, up), (F1 - 8, up), (F1, (0, 0, math.radians(25)))):
+            key_rot(ua, f, e)
+        for f in range(F0, F1 + 1, 5):
+            waving = 14 <= f <= F1 - 8
+            key_rot(fa, f, (math.radians(-90 if waving else -15), 0, math.radians((25 if (f // 5) % 2 else -10) if waving else 0)))
     # breathing
     if torso:
         for f in range(F0, F1 + 1, 15):
@@ -139,6 +152,25 @@ cam_data.dof.focus_distance = (target - cam.location).length
 cam.keyframe_insert('location', frame=F0)
 cam.location += Vector((0, dist * 0.06, 0)); cam.keyframe_insert('location', frame=F1)  # slow push-in
 sc.camera = cam
+if MODE == 'full':
+    cam.animation_data_clear()
+    cam_data.lens = 40
+    piv = bpy.data.objects.new('Orbit', None); sc.collection.objects.link(piv)
+    mid = Vector((target.x, target.y, height * 0.5))
+    piv.location = mid
+    d = height * 1.9
+    cam.parent = piv
+    cam.location = Vector((0, -d, height * 0.02))
+    cam.rotation_euler = (math.radians(90), 0, 0)
+    cam_data.dof.focus_distance = d
+    cam_data.dof.aperture_fstop = 4.0
+    piv.rotation_euler = (0, 0, 0); piv.keyframe_insert('rotation_euler', frame=F0)
+    piv.rotation_euler = (0, 0, math.radians(360)); piv.keyframe_insert('rotation_euler', frame=F1 + 1)
+    for fc in piv.animation_data.action.fcurves:
+        for k in fc.keyframe_points: k.interpolation = 'LINEAR'
+    # rim/key lights follow the camera so she is lit from every side
+    for n in ('Key', 'Rim', 'Fill'):
+        L = bpy.data.objects[n]; wm = L.matrix_world.copy(); L.parent = piv; L.matrix_parent_inverse = piv.matrix_world.inverted()
 
 # ---------- light: golden-hour HDRI + warm key + rim ----------
 w = bpy.data.worlds.new('Golden'); sc.world = w; w.use_nodes = True
