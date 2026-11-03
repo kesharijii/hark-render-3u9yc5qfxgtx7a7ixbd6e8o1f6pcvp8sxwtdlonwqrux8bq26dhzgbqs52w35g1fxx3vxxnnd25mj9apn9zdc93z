@@ -151,6 +151,7 @@ class Face:
             if not pb: continue
             for c in list(pb.constraints): pb.constraints.remove(c)
             pb.rotation_mode = 'XYZ'
+        bpy.ops.object.mode_set(mode='OBJECT')
         self.report('FACE made', len(made))
 
     # ---------------------------------------------------------------- shapes
@@ -230,7 +231,7 @@ class Face:
 
     def speak(self, wav_path, start_frame, fps, gain=1.15, nods=True):
         """Jaw + wide/round/press lip shapes from loudness and brightness of the voice."""
-        env, cen = analyse(wav_path, fps)
+        env, cen = load_analysis(wav_path) if wav_path.endswith('.json') else analyse(wav_path, fps)
         if not len(env): return 0
         peak = np.percentile(env, 95) or 1.0
         a = np.clip((env / peak - .1) / .9 * gain, 0, 1)
@@ -344,6 +345,13 @@ def analyse(path, fps):
         band = (freqs > 150) & (freqs < 5000)
         cen.append(float((freqs[band] * m[band]).sum() / (m[band].sum() + 1e-9)))
     return env, np.array(cen)
+
+
+def load_analysis(path):
+    """Precomputed {'fps', 'env', 'cen'} so a render needs no audio file."""
+    import json
+    d = json.load(open(path))
+    return np.array(d['env'], dtype=float), np.array(d['cen'], dtype=float)
 
 
 def envelope(path, fps):

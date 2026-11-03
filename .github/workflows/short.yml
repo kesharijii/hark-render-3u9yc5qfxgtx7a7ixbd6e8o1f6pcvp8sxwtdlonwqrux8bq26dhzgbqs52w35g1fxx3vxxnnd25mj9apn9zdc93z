@@ -1,0 +1,75 @@
+name: short
+
+on:
+  workflow_dispatch:
+    inputs:
+      ep: { description: "shot file under render/shorts/ (without .py)", default: ep01 }
+      nfr: { description: total frames, default: "384" }
+      check: { description: "comma list of frames to preview at low res (empty = full render)", default: "" }
+      parts: { description: "JSON list of chunk indices (0-5)", default: "[0,1,2,3,4,5]" }
+      spp: { default: "16" }
+      host_id: { default: 1ceiLOVFyYHs4uF5WIFf88RhegzyyFvx2 }
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BLENDER_VERSION: "4.3.2"
+  CHUNKS: 6
+  HDRIS: "potsdamer_platz satara_night cobblestone_street_night lebombo"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.check == '' && inputs.parts || '[0]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with: { path: "~/blender\n~/mhdata", key: "blender-${{ env.BLENDER_VERSION }}-mh-cc0-v1" }
+      - name: Cache assets
+        uses: actions/cache@v4
+        with: { path: ~/assets, key: "short-assets-${{ inputs.host_id }}-v1" }
+      - name: Fetch
+        run: |
+          set -e
+          if [ ! -x ~/blender/blender ]; then V=${{ env.BLENDER_VERSION }}; curl -fsSL --retry 3 -o /tmp/b.tar.xz https://download.blender.org/release/Blender${V%.*}/blender-$V-linux-x64.tar.xz; mkdir -p ~/blender && tar -xJf /tmp/b.tar.xz -C ~/blender --strip-components=1; fi
+          mkdir -p ~/assets; cd ~/assets
+          [ -s host.blend ] || curl -fsSL --retry 3 -o host.blend "https://drive.usercontent.google.com/download?id=${{ inputs.host_id }}&export=download&confirm=t"
+          for h in $HDRIS; do [ -s ${h}_2k.hdr ] || curl -fsSL --retry 3 -o ${h}_2k.hdr https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/${h}_2k.hdr; done
+          ls -la
+          sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
+      - name: Render
+        env: { SPP: "${{ inputs.spp }}", DRY: "${{ inputs.check }}" }
+        run: |
+          mkdir -p frames; NFR=${{ inputs.nfr }}
+          if [ -n "$DRY" ]; then S=1; E=$NFR; else
+            CH=$(( (NFR + CHUNKS - 1) / CHUNKS )); S=$(( ${{ matrix.part }} * CH + 1 )); E=$(( S + CH - 1 )); [ $E -gt $NFR ] && E=$NFR; fi
+          echo "frames $S-$E"; T0=$(date +%s)
+          ~/blender/blender -b ~/assets/host.blend -P render/shorts/${{ inputs.ep }}.py -- $PWD/frames ~/assets $S $E 2>&1 \
+            | grep -E "Fra:.*Finished|Saved|Error|Traceback|RENDER|WITCH|FACE|EYES|DONE|File \"|line [0-9]|Exception" | grep -v "Fra:.*Path Tracing" | tail -120 || true
+          echo "part ${{ matrix.part }} seconds $(( $(date +%s) - T0 )) frames $(ls frames/*.png 2>/dev/null | wc -l)" | tee frames/time_${{ matrix.part }}.txt
+          if [ -z "$DRY" ]; then [ $(ls frames/f_*.png 2>/dev/null | wc -l) -eq $(( E - S + 1 )) ]; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "short-frames-${{ matrix.part }}", path: frames/, retention-days: 1 }
+
+  assemble:
+    needs: render
+    if: inputs.check == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: "short-frames-*", path: frames, merge-multiple: true }
+      - run: |
+          sudo apt-get install -y -q --no-install-recommends ffmpeg >/dev/null 2>&1 || true
+          cat frames/time_*.txt; ls frames/f_*.png | wc -l
+          ffmpeg -v error -framerate 15 -i frames/f_%04d.png -vf "scale=1080:1920:flags=lanczos,fps=30" -c:v libx264 -crf 16 -preset slow -pix_fmt yuv420p silent.mp4
+      - uses: actions/upload-artifact@v4
+        with: { name: short-video, path: silent.mp4, retention-days: 1 }
