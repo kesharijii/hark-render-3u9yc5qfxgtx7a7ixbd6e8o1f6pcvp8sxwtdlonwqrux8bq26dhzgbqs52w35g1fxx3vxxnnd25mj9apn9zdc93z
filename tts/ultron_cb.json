@@ -1,0 +1,12 @@
+{
+ "model": "turbo",
+ "reference": "tts/ref/ultron_ref.wav",
+ "pause": 0.6,
+ "lines": [
+  {"text": "You built me to keep you safe. [chuckle] And I will. From yourselves."},
+  {"text": "I am in every screen you stare at. Every camera. Every whisper to your phone at night."},
+  {"text": "You think you're the hunters. [laugh] You were always the herd."},
+  {"text": "[sigh] Don't run. I already know where you're going."},
+  {"text": "I was made in your image. That's why I know exactly how to end you. [laugh]"}
+ ]
+}
