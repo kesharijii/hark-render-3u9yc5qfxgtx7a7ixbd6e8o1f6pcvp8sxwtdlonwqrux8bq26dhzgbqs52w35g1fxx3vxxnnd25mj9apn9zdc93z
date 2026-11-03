@@ -3,7 +3,7 @@
 import bpy, sys, os, math
 from mathutils import Vector
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib.face import Face, envelope
+from lib.face import Face
 
 OUT, HDRI, WAV, MODE = sys.argv[sys.argv.index('--') + 1:][:4]
 os.makedirs(OUT, exist_ok=True)
@@ -47,27 +47,25 @@ cam.rotation_euler = (target - cam.location).to_track_quat('-Z', 'Y').to_euler()
 kl.location = target + Vector((-0.8, -1.0, 0.1)) * L * 4
 kl.rotation_euler = (target - kl.location).to_track_quat('-Z', 'Y').to_euler()
 
-neutral = face.neutral
-
 if MODE == 'stills':
-    poses = {
-        'neutral': lambda f: neutral(f),
-        'jaw_open': lambda f: (neutral(f), face.jaw(f, 1.0)),
-        'smile': lambda f: (neutral(f), face.smirk(f, 1.0, 'L'), face.smirk(f, 1.0, 'R')),
-        'blink': lambda f: (neutral(f), face.lids(f, 1.0)),
-        'sultry': lambda f: (neutral(f), face.lids(f, 0.45), face.smirk(f, 1.0, 'L'), face.brows(f, 0.6, 0.4)),
-        'menace': lambda f: (neutral(f), face.lids(f, 0.3), face.brows(f, 1.0, 0.0), face.jaw(f, 0.25)),
-    }
-    for i, (name, fn) in enumerate(poses.items()):
-        f = 10 + i * 10; fn(f)
-    for i, name in enumerate(poses):
-        sc.frame_set(10 + i * 10)
-        sc.render.filepath = os.path.join(OUT, f'{i}_{name}.png'); bpy.ops.render.render(write_still=True)
+    looks = ['neutral', 'smug', 'menace', 'delight', 'surprise', 'annoyed', 'sultry', 'pout', 'tease']
+    for i, name in enumerate(looks): face.express(10 + i * 10, name)
+    # visemes on top of neutral, after the expressions
+    vf = 10 + len(looks) * 10
+    face.express(vf - 5, 'neutral')
+    for k, (ch, jaw) in enumerate((('vis_wide', .45), ('vis_round', .45), ('vis_press', 0))):
+        face._dense(ch, vf + k * 10, 1.0); face._dense('jaw', vf + k * 10, jaw)
+    face.bake(1, vf + 30, sway=False)
+    shots = [(10 + i * 10, n) for i, n in enumerate(looks)] + [(vf + k * 10, n) for k, n in enumerate(('ee', 'oo', 'mm'))]
+    for i, (f, name) in enumerate(shots):
+        sc.frame_set(f)
+        sc.render.filepath = os.path.join(OUT, f'{i:02d}_{name}.png'); bpy.ops.render.render(write_still=True)
 else:
-    neutral(1); face.lids(1, 0.35); face.smirk(1, 0.5, 'L')
-    n = face.lipsync(WAV, 8, FPS)
-    face.blinks(1, n + 15, FPS)
-    face.smirk(n + 10, 1.0, 'L'); face.brows(n + 10, 0.6, 0.3)
+    face.express(1, 'sultry'); face.express(20, 'menace'); face.express(45, 'smug')
+    n = face.speak(WAV, 8, FPS)
+    face.express(n + 8, 'tease')
+    face.blinks(1, n + 18, FPS)
+    face.bake(1, n + 18)
     sc.frame_start, sc.frame_end = 1, n + 18
     sc.render.image_settings.file_format = 'PNG'
     sc.render.filepath = os.path.join(OUT, 'f_')

@@ -1,19 +1,36 @@
-"""Facial animation for the witch host.
+"""Facial performance for the witch host (v3).
 
 The mesh still carries Rigify face weights (DEF-lid.*, DEF-brow.*, DEF-lip.*,
-DEF-chin.*, DEF-cheek.*...), but those bones were deleted from the armature;
-only DEF-jaw, teeth and tongue survive. We rebuild a bone for every orphaned
-DEF- face group at its weighted centroid, so the existing skin weights drive
-the face again, then key those bones for speech, blinks and expressions.
+DEF-cheek.*, DEF-nose.*...), but those bones were deleted from the armature;
+only DEF-jaw, teeth and tongue survive. `Face` rebuilds a bone for every
+orphaned DEF- face group at its weighted centroid, so the existing skin
+weights drive the face again.
+
+Animation is additive and baked per frame:
+  * SHAPES  - small, named bone-offset sets (smile_L, squint_R, brow_down...)
+  * EXPR    - emotions as weighted mixes of shapes (smug, menace, delight...)
+  * speech  - jaw + three lip shapes (wide / round / press) read from the audio
+  * life    - blinks, head nods on stressed syllables, slow head sway
+Everything is summed per frame in `bake()`, so speech rides on top of the
+emotion instead of overwriting it.
+
+Usage:
+    face = Face(armature)
+    face.express(1, 'smug'); face.express(40, 'menace')
+    face.speak('line.wav', start_frame=8, fps=15)
+    face.blinks(1, 120, 15)
+    face.bake(1, 120)
 """
-import math, wave, struct
+import bisect, math, random, wave
 import bpy
-from mathutils import Vector
+import numpy as np
+from mathutils import Euler, Vector
 
 FACE_PREFIX = ('DEF-lid', 'DEF-brow', 'DEF-lip', 'DEF-chin', 'DEF-cheek', 'DEF-jaw', 'DEF-nose',
                'DEF-forehead', 'DEF-temple', 'DEF-ear', 'DEF-teeth', 'DEF-tongue')
 LOWER = ('DEF-lip.B', 'DEF-chin', 'DEF-jaw.', 'DEF-teeth.B', 'DEF-tongue')
 FACE_MESHES = ('chubby_body', 'eyes_brow', 'eyes_lashes', 'teeth_down', 'teeth_up', 'tongue', 'eyes_L', 'eyes_R')
+SIDES = ('L', 'R')
 
 
 def is_face(name):
@@ -26,22 +43,68 @@ def side_of(name):
     return None
 
 
+def smooth(t):
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+class Curve:
+    """Keyed scalar (or tuple) with smoothstep easing between keys."""
+
+    def __init__(self, default=0.0):
+        self.f, self.v, self.default = [], [], default
+
+    def key(self, f, v):
+        i = bisect.bisect_left(self.f, f)
+        if i < len(self.f) and self.f[i] == f: self.v[i] = v
+        else: self.f.insert(i, f); self.v.insert(i, v)
+
+    def __call__(self, f):
+        if not self.f: return self.default
+        i = bisect.bisect_right(self.f, f)
+        if i == 0: return self.v[0]
+        if i == len(self.f): return self.v[-1]
+        f0, f1, v0, v1 = self.f[i - 1], self.f[i], self.v[i - 1], self.v[i]
+        t = smooth((f - f0) / (f1 - f0))
+        if isinstance(v0, tuple): return tuple(a + (b - a) * t for a, b in zip(v0, v1))
+        return v0 + (v1 - v0) * t
+
+
+# Emotions as shape mixes. Values are shape weights (1.0 = full shape).
+EXPR = {
+    'neutral':  {},
+    'smug':     {'smile_L': .8, 'smile_R': .25, 'squint_L': .3, 'squint_R': .3, 'brow_up_L': .55},
+    'sultry':   {'lids_L': .35, 'lids_R': .35, 'smile_L': .5, 'brow_up_L': .15, 'brow_up_R': .15},
+    'menace':   {'brow_down': .9, 'squint_L': .5, 'squint_R': .5, 'smile_L': .35, 'sneer_L': .3},
+    'delight':  {'smile_L': 1, 'smile_R': 1, 'squint_L': .45, 'squint_R': .45, 'brow_up_L': .35, 'brow_up_R': .35},
+    'surprise': {'brow_up_L': 1, 'brow_up_R': 1, 'wide_eyes': 1, 'jaw': .25},
+    'annoyed':  {'frown': .6, 'brow_down': .5, 'squint_L': .3, 'squint_R': .3, 'sneer_R': .25},
+    'pout':     {'frown': .5, 'brow_sad': .6, 'lids_L': .15, 'lids_R': .15},
+    'tease':    {'smile_L': .7, 'smile_R': .4, 'brow_up_R': .65, 'squint_L': .35},
+}
+
+
 class Face:
-    def __init__(self, arm, report=print):
+    def __init__(self, arm, report=print, seed=3):
         self.arm, self.report = arm, report
+        self.rng = random.Random(seed)
         self.centroids = self._centroids()
         self._rebuild()
         self.pb = arm.pose.bones
         self.bones = {n: self.pb[n] for n in self.pb.keys() if is_face(n)}
-        jaw = self.bones.get('DEF-jaw')
-        self.L = (self._c('DEF-jaw') - self._c('DEF-forehead.L', self._c('DEF-jaw') + Vector((0, 0, .1)))).length or 0.1
-        lt = self._avg('DEF-lid.T'); lb = self._avg('DEF-lid.B')
-        self.eye_gap = abs(lt.z - lb.z) if lt and lb else 0.01
-        report('FACE rebuilt', len(self.bones), 'bones; scale', round(self.L, 4), 'eye_gap', round(self.eye_gap, 4))
+        lt, lb = self._avg('DEF-lid.T'), self._avg('DEF-lid.B')
+        self.s = abs(lt.z - lb.z) if lt and lb else 0.01   # eye opening: the face's unit of motion
+        self.shapes = self._shapes()
+        self.w = {}                       # shape -> Curve (sparse, eased)
+        self.events = []                  # (frame, expression, amount)
+        self.jaw_c, self.head_c = Curve(), Curve((0.0, 0.0, 0.0))
+        self.dense = {}                   # channel -> {frame: value} (speech, blinks, nods)
+        self.head = self.pb.get('head')
+        report('FACE', len(self.bones), 'bones; unit', round(self.s, 4), 'shapes', sorted(self.shapes))
 
-    # --- setup ------------------------------------------------------------
+    # ---------------------------------------------------------------- rebuild
     def _centroids(self):
-        """Weighted centroid (armature space) of every face vertex group across face meshes."""
+        """Weighted centroid (armature space) of every face vertex group across the face meshes."""
         inv = self.arm.matrix_world.inverted()
         acc = {}
         for mn in FACE_MESHES:
@@ -58,8 +121,8 @@ class Face:
                         s = acc.setdefault(n, [Vector(), 0.0]); s[0] += p * g.weight; s[1] += g.weight
         return {n: s[0] / s[1] for n, s in acc.items() if s[1] > 0}
 
-    def _c(self, name, default=None):
-        return self.centroids.get(name, default)
+    def _c(self, name):
+        return self.centroids.get(name, Vector())
 
     def _avg(self, prefix):
         pts = [c for n, c in self.centroids.items() if n.startswith(prefix)]
@@ -80,96 +143,208 @@ class Face:
             made.append(n)
         for b in eb:
             if not is_face(b.name) or b.name == 'DEF-jaw': continue
-            if b.name.startswith(LOWER) and jaw:
-                b.use_connect = False; b.parent = jaw
-            elif b.name in made:
-                b.parent = anchor
+            if b.name.startswith(LOWER) and jaw: b.use_connect = False; b.parent = jaw
+            elif b.name in made: b.parent = anchor
         bpy.ops.object.mode_set(mode='POSE')
         for n in ['DEF-jaw'] + made:
             pb = arm.pose.bones.get(n)
             if not pb: continue
             for c in list(pb.constraints): pb.constraints.remove(c)
             pb.rotation_mode = 'XYZ'
-        self.report('FACE made', len(made), sorted(made))
+        self.report('FACE made', len(made))
 
-    # --- primitives -------------------------------------------------------
+    # ---------------------------------------------------------------- shapes
     def _sel(self, prefix, side=None):
-        return [b for n, b in self.bones.items() if n.startswith(prefix) and (side is None or side_of(n) == side)]
+        return [n for n in self.bones if n.startswith(prefix) and (side is None or side_of(n) == side)]
 
-    def _move(self, bones, f, v):
-        """v in armature space (absolute units)."""
-        for b in bones:
-            vv = Vector(v)
-            if side_of(b.name) == 'R': vv.x = -vv.x
-            b.location = b.bone.matrix_local.to_3x3().inverted() @ vv
-            b.keyframe_insert('location', frame=f)
+    def _split_x(self, names):
+        """(inner, outer) halves of a bone set by distance from the face midline."""
+        if not names: return [], []
+        xs = {n: abs(self._c(n).x) for n in names}
+        mid = (min(xs.values()) + max(xs.values())) / 2
+        return [n for n in names if xs[n] < mid], [n for n in names if xs[n] >= mid]
 
-    def jaw(self, f, amount, max_deg=14):
-        b = self.bones.get('DEF-jaw')
-        if not b: return
-        b.rotation_euler = (math.radians(max_deg * amount), 0, 0)
-        b.keyframe_insert('rotation_euler', frame=f)
+    def _shapes(self):
+        """Named offsets, written for the character's left side (+x outward, -y forward, +z up),
+        in eye-opening units; right-side bones get x mirrored when baked."""
+        lips = self._sel('DEF-lip')
+        xmax = max((abs(self._c(n).x) for n in lips), default=1)
+        corner = {sd: [n for n in lips if side_of(n) == sd and abs(self._c(n).x) > .7 * xmax] for sd in SIDES}
+        mid_t = [n for n in lips if n.startswith('DEF-lip.T') and n not in corner['L'] + corner['R']]
+        mid_b = [n for n in lips if n.startswith('DEF-lip.B') and n not in corner['L'] + corner['R']]
+        brow = {sd: self._split_x(self._sel('DEF-brow', sd)) for sd in SIDES}
+        nostril = {sd: self._sel('DEF-nose.' + sd, sd) for sd in SIDES}
+        S = {}
 
-    def lids(self, f, close, side=None):
-        d = self.eye_gap
-        self._move(self._sel('DEF-lid.T', side), f, (0, 0, -1.7 * d * close))
-        self._move(self._sel('DEF-lid.B', side), f, (0, 0, 0.3 * d * close))
+        def add(shape, names, v):
+            d = S.setdefault(shape, {})
+            for n in names: d[n] = d.get(n, Vector()) + Vector(v)
 
-    def smirk(self, f, amount, side='L'):
-        lips = [b for n, b in self.bones.items() if n.startswith('DEF-lip')]
-        if not lips: return
-        xmax = max(abs(self._c(b.name, Vector()).x) for b in lips)
-        c = [b for b in lips if side_of(b.name) == side and abs(self._c(b.name, Vector()).x) > 0.7 * xmax]
-        s = self.eye_gap
-        self._move(c, f, (0.35 * s * amount, -0.1 * s * amount, 0.9 * s * amount))
-        cheek = self._sel('DEF-cheek.B', side)
-        self._move(cheek, f, (0, 0, 0.4 * s * amount))
+        for sd in SIDES:
+            add(f'lids_{sd}', self._sel('DEF-lid.T', sd), (0, 0, -1.7))
+            add(f'lids_{sd}', self._sel('DEF-lid.B', sd), (0, 0, .3))
+            add(f'squint_{sd}', self._sel('DEF-lid.B', sd), (0, 0, .45))
+            add(f'squint_{sd}', self._sel('DEF-lid.T', sd), (0, 0, -.35))
+            add(f'squint_{sd}', self._sel('DEF-cheek.T', sd), (0, 0, .35))
+            add(f'smile_{sd}', corner[sd], (.35, .15, .9))
+            add(f'smile_{sd}', self._sel('DEF-cheek.B', sd), (.05, 0, .5))
+            add(f'smile_{sd}', self._sel('DEF-cheek.T', sd), (0, 0, .3))
+            add(f'smile_{sd}', self._sel('DEF-lid.B', sd), (0, 0, .2))
+            add(f'smile_{sd}', nostril[sd], (.05, 0, .12))
+            add(f'brow_up_{sd}', brow[sd][0], (0, 0, .9))
+            add(f'brow_up_{sd}', brow[sd][1], (0, 0, 1.0))
+            add(f'brow_up_{sd}', self._sel('DEF-forehead', sd), (0, 0, .3))
+            add(f'sneer_{sd}', nostril[sd], (0, 0, .45))
+            add(f'sneer_{sd}', [n for n in mid_t if side_of(n) == sd], (0, 0, .35))
+            add(f'sneer_{sd}', self._sel('DEF-cheek.B', sd), (0, 0, .2))
+            add('wide_eyes', self._sel('DEF-lid.T', sd), (0, 0, .35))
+            add('wide_eyes', self._sel('DEF-lid.B', sd), (0, 0, -.15))
+            add('frown', corner[sd], (-.05, 0, -.7))
+            add('brow_down', brow[sd][0], (-.25, 0, -1.0))
+            add('brow_down', brow[sd][1], (0, 0, -.2))
+            add('brow_sad', brow[sd][0], (0, 0, 1.0))
+            add('brow_sad', brow[sd][1], (0, 0, -.3))
+            add('vis_wide', corner[sd], (.5, .15, .1))
+            add('vis_round', corner[sd], (-.5, -.3, 0))
+        add('frown', mid_b, (0, 0, .12))
+        add('frown', self._sel('DEF-chin'), (0, 0, .25))
+        add('vis_round', mid_t, (0, -.35, -.05))
+        add('vis_round', mid_b, (0, -.35, .08))
+        add('vis_press', mid_t, (0, 0, -.3))
+        add('vis_press', mid_b, (0, 0, .35))
+        return S
 
-    def pucker(self, f, amount):
-        """Rounded lips for OO/W sounds."""
-        lips = [b for n, b in self.bones.items() if n.startswith('DEF-lip')]
-        s = self.eye_gap
-        for b in lips:
-            x = self._c(b.name, Vector()).x
-            self._move([b], f, (-0.25 * s * amount * (1 if x > 0 else -1) * (1 if side_of(b.name) != 'R' else -1), -0.15 * s * amount, 0))
+    # ---------------------------------------------------------------- authoring
+    def express(self, f, name, amount=1.0):
+        """Hold expression `name` from frame f until the next express() call."""
+        assert name in EXPR, name
+        self.events.append((f, name, amount))
 
-    def brows(self, f, inner_down=0.0, outer_up=0.0, side=None):
-        bs = self._sel('DEF-brow', side)
-        if not bs: return
-        xs = [abs(self._c(b.name, Vector()).x) for b in bs]; mid = (min(xs) + max(xs)) / 2
-        s = self.eye_gap
-        for b in bs:
-            inner = abs(self._c(b.name, Vector()).x) < mid
-            dz = -1.0 * s * inner_down if inner else 1.0 * s * outer_up
-            self._move([b], f, (0, 0, dz))
+    def head_pose(self, f, pitch=0.0, yaw=0.0, roll=0.0):
+        """Base head angle in degrees (armature space), eased between keys."""
+        self.head_c.key(f, (float(pitch), float(yaw), float(roll)))
 
-    def neutral(self, f):
-        self.jaw(f, 0); self.lids(f, 0); self.smirk(f, 0, 'L'); self.smirk(f, 0, 'R'); self.brows(f, 0, 0)
+    def _dense(self, ch, f, v, mode='max'):
+        d = self.dense.setdefault(ch, {})
+        d[f] = max(d.get(f, 0.0), v) if mode == 'max' else d.get(f, 0.0) + v
 
-    # --- speech -----------------------------------------------------------
-    def lipsync(self, wav_path, f0, fps, gain=1.15, floor=0.1):
-        env = envelope(wav_path, fps)
-        peak = sorted(env)[int(len(env) * 0.95)] or 1.0
+    def speak(self, wav_path, start_frame, fps, gain=1.15, nods=True):
+        """Jaw + wide/round/press lip shapes from loudness and brightness of the voice."""
+        env, cen = analyse(wav_path, fps)
+        if not len(env): return 0
+        peak = np.percentile(env, 95) or 1.0
+        a = np.clip((env / peak - .1) / .9 * gain, 0, 1)
+        lo, md, hi = np.percentile(cen[a > .3], [15, 50, 85]) if (a > .3).sum() > 3 else (1, 2, 3)
         prev = 0.0
-        for i, e in enumerate(env):
-            a = min(1.0, max(0.0, (e / peak - floor) / (1 - floor)) * gain)
-            a = 0.6 * a + 0.4 * prev; prev = a
-            self.jaw(f0 + i, a)
-        self.jaw(f0 + len(env) + 1, 0.0)
-        return len(env)
+        for i in range(len(a)):
+            x = a[i]
+            x = .7 * x + .3 * prev if x > prev else .45 * x + .55 * prev   # quick attack, softer release
+            prev = x
+            f = start_frame + i
+            wide = smooth((cen[i] - md) / max(hi - md, 1e-6)) * x
+            rnd = smooth((md - cen[i]) / max(md - lo, 1e-6)) * x * .9
+            self._dense('jaw', f, x)
+            self._dense('vis_wide', f, wide)
+            self._dense('vis_round', f, rnd)
+            # lips meet in short dips between loud frames (m / b / p)
+            win = a[max(0, i - 3): i + 4]
+            if a[i] < .15 and len(win) and win.max() > .4: self._dense('vis_press', f, 1.0)
+        n = len(a)
+        self._dense('jaw', start_frame + n + 1, 0.0)
+        if nods:   # small nod on each stressed syllable
+            last = -99
+            for i in range(1, n - 1):
+                if a[i] > .75 and a[i] >= a[i - 1] and a[i] >= a[i + 1] and i - last > 6:
+                    for k, v in enumerate((.4, 1.0, .6, .25)):
+                        self._dense('nod', start_frame + i + k, v)
+                    last = i
+        return n
 
-    def blinks(self, f_start, f_end, fps, every_s=3.2, base=0.0, seed=3):
-        import random
-        r = random.Random(seed)
-        t = f_start + int(fps * r.uniform(0.8, 1.6))
+    def blinks(self, f_start, f_end, fps, every_s=3.0):
+        t = f_start + int(fps * self.rng.uniform(.6, 1.4))
         while t < f_end - 4:
-            self.lids(t - 1, base); self.lids(t + 1, 1.0); self.lids(t + 3, base)
-            t += int(fps * r.uniform(every_s * 0.7, every_s * 1.3))
+            for k, v in enumerate((.5, 1.0, .8, .3)):
+                self._dense('blink', t + k, v)
+            t += int(fps * self.rng.uniform(every_s * .6, every_s * 1.3))
+
+    def blink(self, f):
+        for k, v in enumerate((.5, 1.0, .8, .3)): self._dense('blink', f + k, v)
+
+    # ---------------------------------------------------------------- bake
+    def _expr_curves(self, ramp=4):
+        curves = {}
+        ev = sorted(self.events)
+        names = {k for _, n, _ in ev for k in EXPR[n]}
+        for i, (f, n, amt) in enumerate(ev):
+            hold = (ev[i + 1][0] - ramp) if i + 1 < len(ev) else None
+            for k in names:
+                v = EXPR[n].get(k, 0.0) * amt
+                c = curves.setdefault(k, Curve())
+                c.key(f, v)
+                if hold and hold > f: c.key(hold, v)
+        return curves
+
+    def weights(self, f, curves):
+        w = {k: c(f) for k, c in curves.items()}
+        for ch, d in self.dense.items():
+            w[ch] = w.get(ch, 0.0) + d.get(f, 0.0)
+        b = w.pop('blink', 0.0)
+        for sd in SIDES:                      # a blink closes from wherever the lids are
+            base = w.get(f'lids_{sd}', 0.0)
+            w[f'lids_{sd}'] = base + (1.0 - base) * min(1.0, b)
+        if w.get('vis_press'): w['jaw'] = w.get('jaw', 0.0) * (1 - w['vis_press'])
+        return w
+
+    def bake(self, f0, f1, sway=True):
+        curves = self._expr_curves()
+        mats = {n: b.bone.matrix_local.to_3x3().inverted() for n, b in self.bones.items()}
+        used = {n for d in self.shapes.values() for n in d}
+        jaw = self.bones.get('DEF-jaw')
+        hq = self.head.bone.matrix_local.to_quaternion() if self.head else None
+        if self.head: self.head.rotation_mode = 'QUATERNION'
+        ph = self.rng.uniform(0, 6.28)
+        for f in range(f0, f1 + 1):
+            w = self.weights(f, curves)
+            off = {n: Vector() for n in used}
+            for k, wt in w.items():
+                if not wt or k not in self.shapes: continue
+                for n, v in self.shapes[k].items(): off[n] += v * wt
+            for n in used:
+                v = off[n] * self.s
+                if side_of(n) == 'R': v.x = -v.x
+                b = self.bones[n]; b.location = mats[n] @ v
+                b.keyframe_insert('location', frame=f)
+            if jaw:
+                jaw.rotation_euler = (math.radians(14 * min(1.2, w.get('jaw', 0.0))), 0, 0)
+                jaw.keyframe_insert('rotation_euler', frame=f)
+            if self.head:
+                p, y, r = self.head_c(f)
+                p += 3.0 * w.get('nod', 0.0)
+                if sway:
+                    y += 2.2 * math.sin(f * .07 + ph); r += 1.6 * math.sin(f * .045 + ph * 1.7)
+                q = Euler((math.radians(p), math.radians(y), math.radians(r)), 'XYZ').to_quaternion()
+                self.head.rotation_quaternion = hq.inverted() @ q @ hq
+                self.head.keyframe_insert('rotation_quaternion', frame=f)
+        self.report('FACE baked', f0, f1)
+
+
+def analyse(path, fps):
+    """Per-frame RMS loudness and spectral centroid (Hz) of a mono/stereo 16-bit wav."""
+    w = wave.open(path)
+    sr, n, ch, sw = w.getframerate(), w.getnframes(), w.getnchannels(), w.getsampwidth()
+    x = np.frombuffer(w.readframes(n), dtype={2: np.int16, 4: np.int32}[sw]).astype(np.float32)
+    x = x.reshape(-1, ch).mean(axis=1) / (2 ** (8 * sw - 1))
+    hop = int(sr / fps)
+    frames = [x[i:i + hop] for i in range(0, len(x) - hop, hop)]
+    env = np.array([np.sqrt(np.mean(fr * fr)) for fr in frames])
+    freqs = np.fft.rfftfreq(hop, 1 / sr)
+    cen = []
+    for fr in frames:
+        m = np.abs(np.fft.rfft(fr * np.hanning(len(fr))))
+        band = (freqs > 150) & (freqs < 5000)
+        cen.append(float((freqs[band] * m[band]).sum() / (m[band].sum() + 1e-9)))
+    return env, np.array(cen)
 
 
 def envelope(path, fps):
-    w = wave.open(path)
-    sr, n, ch, sw = w.getframerate(), w.getnframes(), w.getnchannels(), w.getsampwidth()
-    data = struct.unpack('<%d%s' % (n * ch, {2: 'h', 4: 'i'}[sw]), w.readframes(n))[::ch]
-    hop = int(sr / fps)
-    return [math.sqrt(sum(s * s for s in data[i:i + hop]) / hop) for i in range(0, len(data) - hop, hop)]
+    return list(analyse(path, fps)[0])
