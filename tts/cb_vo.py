@@ -3,7 +3,7 @@ import json, sys, os, time, torch, torchaudio as ta
 from chatterbox.tts_turbo import ChatterboxTurboTTS
 cfg = json.load(open(sys.argv[1])); out = sys.argv[2]; os.makedirs(out, exist_ok=True)
 nano = cfg.get("model", "turbo") == "nano"
-t0 = time.time(); m = ChatterboxTurboTTS.from_pretrained(device="cpu", nano=nano)
+t0 = time.time(); m = ChatterboxTurboTTS.from_pretrained(device="cpu", **({"nano": True} if nano else {}))
 print(f"load {time.time()-t0:.1f}s nano={nano}")
 ref = cfg["reference"]; pieces = []; sr = m.sr; timings = []; cur = 0.0
 for i, ln in enumerate(cfg["lines"]):
