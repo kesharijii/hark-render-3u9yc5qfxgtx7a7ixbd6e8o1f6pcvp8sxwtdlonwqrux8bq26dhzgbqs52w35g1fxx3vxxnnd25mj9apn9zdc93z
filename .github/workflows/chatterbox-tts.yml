@@ -1,0 +1,32 @@
+name: chatterbox-tts
+on:
+  workflow_dispatch:
+    inputs:
+      config: { description: "voiceover JSON in repo", default: "tts/laugh_test.json" }
+jobs:
+  tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      HF_HOME: ${{ github.workspace }}/.hf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - id: venv
+        uses: actions/cache@v4
+        with: { path: "${{ env.pythonLocation }}", key: cb-venv-py311-v1 }
+      - uses: actions/cache@v4
+        with: { path: .hf, key: cb-models-v1 }
+      - name: install
+        run: |
+          sudo apt-get install -y -q ffmpeg >/dev/null 2>&1 || true
+          if [ "${{ steps.venv.outputs.cache-hit }}" != "true" ]; then pip install -q chatterbox-tts; fi
+          python -c "import chatterbox,torch;print(torch.__version__)"; nproc
+      - name: voice
+        run: python tts/cb_vo.py "${{ inputs.config }}" vo
+      - name: mp3
+        run: ffmpeg -v error -i vo/vo_full.wav -af loudnorm=I=-16:TP=-1.5 -c:a libmp3lame -q:a 2 vo/vo_full.mp3 && ls -la vo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: cb-vo, path: vo/, retention-days: 2 }
