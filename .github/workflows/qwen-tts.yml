@@ -7,15 +7,30 @@ jobs:
   tts:
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    env:
+      HF_HOME: ${{ github.workspace }}/.hf
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      - name: cache python env
+        id: venv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.pythonLocation }}
+          key: qwen-venv-${{ runner.os }}-py312-v1
+      - name: cache models
+        uses: actions/cache@v4
+        with:
+          path: .hf
+          key: qwen-models-1.7b-v1
       - name: install
         run: |
           sudo apt-get install -y -q sox libsox-fmt-all ffmpeg >/dev/null 2>&1 || true
-          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-          pip install -q qwen-tts
+          if [ "${{ steps.venv.outputs.cache-hit }}" != "true" ]; then
+            pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+            pip install -q qwen-tts
+          fi
           python -c "import torch,qwen_tts;print('torch',torch.__version__)"; free -g; nproc
       - name: voice
         run: python tts/qwen_vo.py "${{ inputs.config }}" vo
