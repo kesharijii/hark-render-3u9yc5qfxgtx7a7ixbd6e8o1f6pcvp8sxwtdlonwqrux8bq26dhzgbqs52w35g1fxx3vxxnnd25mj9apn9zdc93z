@@ -1,0 +1,9 @@
+{
+ "language": "English",
+ "voice_instruct": "Young adult female in her mid twenties, low smoky alto, sultry and seductive, slow unhurried pacing, soft breathy close-mic delivery, teasing playful smile in the voice, lingering on vowels, intimate half-whisper, American accent.",
+ "ref_text": "Mmm, come a little closer. I have a secret, and I only tell it to people I like.",
+ "lines": [
+  {"text": "Well, hello there. You look like someone who stays up way too late.", "pause": 0.5},
+  {"text": "Don't worry... I won't tell anyone. Just stay a little longer, okay?"}
+ ]
+}
