@@ -1,0 +1,26 @@
+name: qwen-tts
+on:
+  workflow_dispatch:
+    inputs:
+      config: { description: "voiceover JSON in repo", default: "tts/sample_host.json" }
+jobs:
+  tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: install
+        run: |
+          sudo apt-get install -y -q sox libsox-fmt-all ffmpeg >/dev/null 2>&1 || true
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -q qwen-tts
+          python -c "import torch,qwen_tts;print('torch',torch.__version__)"; free -g; nproc
+      - name: voice
+        run: python tts/qwen_vo.py "${{ inputs.config }}" vo
+      - name: mp3
+        run: ffmpeg -v error -i vo/vo_full.wav -af loudnorm=I=-16:TP=-1.5 -c:a libmp3lame -q:a 2 vo/vo_full.mp3 && ls -la vo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: qwen-vo, path: vo/, retention-days: 2 }

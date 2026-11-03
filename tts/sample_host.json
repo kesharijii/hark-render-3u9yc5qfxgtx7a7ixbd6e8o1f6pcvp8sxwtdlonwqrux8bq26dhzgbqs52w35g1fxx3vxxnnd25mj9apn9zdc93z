@@ -1,0 +1,11 @@
+{
+ "language": "English",
+ "voice_instruct": "Young adult female in her early twenties, bright warm mezzo voice, playful and a little mischievous, confident storyteller energy, expressive rising and falling pitch, natural breaths, a smile in the voice, quick but clear pacing, American accent.",
+ "ref_text": "Okay, okay, listen. I have a story for you, and I promise, you are not going to believe how it ends.",
+ "lines": [
+  {"text": "Stop scrolling. In nineteen sixty-two, three men escaped from Alcatraz using spoons, paint, and fake heads made of soap."},
+  {"text": "The guards counted them every single night. Every night, the heads were in the beds."},
+  {"text": "And then one morning... nobody answered.", "pause": 0.5},
+  {"text": "They were never found. Not once. So where did they go? Tell me your theory, and follow for part two."}
+ ]
+}
