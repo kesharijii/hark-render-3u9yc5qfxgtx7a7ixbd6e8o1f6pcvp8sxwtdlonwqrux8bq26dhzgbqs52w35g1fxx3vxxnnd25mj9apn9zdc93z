@@ -47,13 +47,13 @@ cam.rotation_euler = (target - cam.location).to_track_quat('-Z', 'Y').to_euler()
 kl.location = target + Vector((-0.8, -1.0, 0.1)) * L * 4
 kl.rotation_euler = (target - kl.location).to_track_quat('-Z', 'Y').to_euler()
 
-def neutral(f):
-    face.jaw(f, 0); face.lids(f, 0); face.smirk(f, 0, 'L'); face.smirk(f, 0, 'R'); face.brows(f, 0, 0)
+neutral = face.neutral
 
 if MODE == 'stills':
     poses = {
         'neutral': lambda f: neutral(f),
         'jaw_open': lambda f: (neutral(f), face.jaw(f, 1.0)),
+        'smile': lambda f: (neutral(f), face.smirk(f, 1.0, 'L'), face.smirk(f, 1.0, 'R')),
         'blink': lambda f: (neutral(f), face.lids(f, 1.0)),
         'sultry': lambda f: (neutral(f), face.lids(f, 0.45), face.smirk(f, 1.0, 'L'), face.brows(f, 0.6, 0.4)),
         'menace': lambda f: (neutral(f), face.lids(f, 0.3), face.brows(f, 1.0, 0.0), face.jaw(f, 0.25)),
