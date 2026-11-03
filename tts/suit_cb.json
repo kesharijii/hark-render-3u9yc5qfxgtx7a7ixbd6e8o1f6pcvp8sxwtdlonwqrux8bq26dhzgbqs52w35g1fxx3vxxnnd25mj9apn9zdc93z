@@ -1,0 +1,11 @@
+{
+ "model": "turbo",
+ "reference": "tts/ref/suit_ai_ref.wav",
+ "pause": 0.45,
+ "lines": [
+  {"text": "Good evening. Suit diagnostics are green, and your heart rate is a little high. [chuckle] Nervous?"},
+  {"text": "Would you like night vision, or should we keep pretending you can see in the dark? [laugh]"},
+  {"text": "[sigh] You just webbed the pigeon again. That's the third one this week."},
+  {"text": "[gasp] Incoming at your three o'clock! Web shooters are ready whenever you are."}
+ ]
+}
