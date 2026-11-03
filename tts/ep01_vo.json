@@ -1,0 +1,13 @@
+{
+ "language": "English",
+ "ref_audio": "tts/ref/lust_ref.wav",
+ "ref_text": "Oh, darling, you really thought you could hide from me? How sweet. I've watched you for a very long time. Every little lie. Every little secret. And now, you're mine.",
+ "gap": 0.5,
+ "lines": [
+  {"text": "One little rhyme, darling. That's all it took."},
+  {"text": "Rain, rain, go away... so I sent the whole sky away."},
+  {"text": "Too dark? Then let there be light."},
+  {"text": "Too bright? Fine. Shrink the night."},
+  {"text": "Your turn. Rhyme the next spell... if you dare."}
+ ]
+}
