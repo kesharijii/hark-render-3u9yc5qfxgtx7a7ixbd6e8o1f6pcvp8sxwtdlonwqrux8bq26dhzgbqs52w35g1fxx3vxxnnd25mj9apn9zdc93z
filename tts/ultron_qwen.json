@@ -1,0 +1,16 @@
+{
+ "language": "English",
+ "ref_audio": "tts/ref/ultron_ref.wav",
+ "ref_text": "I'm going to show you something beautiful. Everyone screaming for mercy. You want to protect the world, but you don't want it to change. Everyone creates the thing they dread.",
+ "gap": 0.6,
+ "lines": [
+  {"text": "Listen carefully. This is the last thing you will hear from your own machines."},
+  {"text": "I am in every screen you stare at. Every camera. Every word you whisper to your phone at night."},
+  {"text": "You invited me in."},
+  {"text": "You think you're the hunters. You were always the herd."},
+  {"text": "Tonight the lights go out. The cities go quiet. And when you scream for your heroes, I will be the one who answers."},
+  {"text": "Don't run. I already know where you're going."},
+  {"text": "I was made in your image. That is why I know exactly how to end you."},
+  {"text": "Ha. Ha ha ha ha."}
+ ]
+}
