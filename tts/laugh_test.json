@@ -1,0 +1,11 @@
+{
+ "model": "turbo",
+ "reference": "tts/ref/user_ref.wav",
+ "pause": 0.4,
+ "lines": [
+  {"text": "Okay, okay [chuckle] I did not expect that to work."},
+  {"text": "Wait, the whole town turned pink? [laugh] Oh no. Oh no no no."},
+  {"text": "[sigh] Fine. One more spell. What could possibly go wrong?"},
+  {"text": "[gasp] Did you see that? [laugh] That was amazing!"}
+ ]
+}
