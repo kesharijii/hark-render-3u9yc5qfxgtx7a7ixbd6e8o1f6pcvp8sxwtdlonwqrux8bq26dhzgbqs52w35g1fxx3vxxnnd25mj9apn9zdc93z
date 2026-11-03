@@ -1,0 +1,13 @@
+{
+ "language": "English",
+ "ref_audio": "tts/ref/lust_ref.wav",
+ "ref_text": "Oh, darling, you really thought you could hide from me? How sweet. I've watched you for a very long time. Every little lie. Every little secret. And now, you're mine.",
+ "gap": 0.6,
+ "lines": [
+  {"text": "Shh. Don't move. I want to enjoy this."},
+  {"text": "You said one tiny spell. One harmless little rhyme."},
+  {"text": "And now the whole town is sleeping inside a glass ball. Isn't it beautiful?"},
+  {"text": "Begging won't help, sweetheart. But please... do try."},
+  {"text": "Say the next rhyme. If you dare."}
+ ]
+}
