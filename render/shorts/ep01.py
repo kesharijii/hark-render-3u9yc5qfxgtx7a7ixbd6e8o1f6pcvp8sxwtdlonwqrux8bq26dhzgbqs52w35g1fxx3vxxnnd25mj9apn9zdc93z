@@ -57,9 +57,9 @@ ground = S.prim('cylinder', 'Ground', stone, radius=1.35, depth=.02, vertices=96
 # neon rings behind her, dark until NEON_ON
 pink = S.mat('NeonPink', (1, .1, .6), .3, (1, .08, .55), 0)
 cyan = S.mat('NeonCyan', (.1, .9, 1), .3, (.05, .85, 1), 0)
-rings = [S.prim('torus', 'RingPink', pink, major_radius=.75, minor_radius=.025, location=(-.45, .9, 1.45), rotation=(math.radians(90), 0, 0))
-S.prim('torus', 'RingCyan', cyan, major_radius=.48, minor_radius=.022, location=(.6, .7, .95), rotation=(math.radians(90), 0, 0)),
-S.prim('cylinder', 'BarPink', pink, radius=.02, depth=1.6, location=(.95, 1.0, .9))]
+rings = [S.prim('torus', 'RingPink', pink, major_radius=.75, minor_radius=.025, location=(-.45, .9, 1.45), rotation=(math.radians(90), 0, 0)),
+         S.prim('torus', 'RingCyan', cyan, major_radius=.48, minor_radius=.022, location=(.6, .7, .95), rotation=(math.radians(90), 0, 0)),
+         S.prim('cylinder', 'BarPink', pink, radius=.02, depth=1.6, location=(.95, 1.0, .9))]
 for o in rings: S.show(o, NEON_ON)
 for m in (pink, cyan):
     s_ = S.emission_socket(m); S.key_socket(s_, NEON_ON, 0); S.key_socket(s_, NEON_ON + 5, 18)
