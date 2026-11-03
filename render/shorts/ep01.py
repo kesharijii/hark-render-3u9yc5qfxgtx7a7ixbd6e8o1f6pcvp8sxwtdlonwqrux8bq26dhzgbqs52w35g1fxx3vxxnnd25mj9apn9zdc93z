@@ -57,9 +57,10 @@ ground = S.prim('cylinder', 'Ground', stone, radius=1.35, depth=.02, vertices=96
 # neon rings behind her, dark until NEON_ON
 pink = S.mat('NeonPink', (1, .1, .6), .3, (1, .08, .55), 0)
 cyan = S.mat('NeonCyan', (.1, .9, 1), .3, (.05, .85, 1), 0)
-S.prim('torus', 'RingPink', pink, major_radius=.75, minor_radius=.025, location=(-.45, .9, 1.45), rotation=(math.radians(90), 0, 0))
-S.prim('torus', 'RingCyan', cyan, major_radius=.48, minor_radius=.022, location=(.6, .7, .95), rotation=(math.radians(90), 0, 0))
-S.prim('cylinder', 'BarPink', pink, radius=.02, depth=1.6, location=(.95, 1.0, .9))
+rings = [S.prim('torus', 'RingPink', pink, major_radius=.75, minor_radius=.025, location=(-.45, .9, 1.45), rotation=(math.radians(90), 0, 0))
+S.prim('torus', 'RingCyan', cyan, major_radius=.48, minor_radius=.022, location=(.6, .7, .95), rotation=(math.radians(90), 0, 0)),
+S.prim('cylinder', 'BarPink', pink, radius=.02, depth=1.6, location=(.95, 1.0, .9))]
+for o in rings: S.show(o, NEON_ON)
 for m in (pink, cyan):
     s_ = S.emission_socket(m); S.key_socket(s_, NEON_ON, 0); S.key_socket(s_, NEON_ON + 5, 18)
 
@@ -81,10 +82,8 @@ for o in [base, trim, shelf] + books: S.show(o, GLOBE)
 
 # ------------------------------------------------------------ weather
 drop = S.prim('cylinder', 'Drop', S.mat('Rain', (.8, .85, 1), .05, (.6, .7, .9), .4, transmission=.6), radius=.0035, depth=.22, vertices=6)
-drop.rotation_euler = (0, math.radians(90), 0)             # long axis -> X, aligned to velocity
-bpy.context.view_layer.objects.active = drop; bpy.ops.object.transform_apply(rotation=True)
 rain_box = S.prim('plane', 'RainCloud', size=9, location=(0, -1.0, 5.5))
-S.particles('Rain', rain_box, 1 - 30, SKY_SWITCH, 9000, drop, 26, vel=(0, 0, -9), gravity=0.3, align_velocity=True)
+S.particles('Rain', rain_box, 1 - 30, SKY_SWITCH, 9000, drop, 26, vel=(0, 0, -9), gravity=0.3)      # drops keep their vertical axis
 rain_mod = rain_box.modifiers['Rain']                         # every drop vanishes with the flash
 for f, on in ((1, True), (SKY_SWITCH + 1, False)): rain_mod.show_render = on; rain_mod.keyframe_insert('show_render', frame=f)
 
@@ -163,16 +162,16 @@ M(c, 1, FACE + up(1.9, 20) + Vector((.35, 0, 0)), FACE + Vector((0, 0, .02)), 60
 M(c, 68, FACE + up(1.15, 20) + Vector((.2, 0, 0)), FACE + Vector((0, 0, .03)), 60)
 
 c = cams.shot('B', SHOTS['B'][0], 35)                                   # medium, rain; tilt up on the switch
-mid = Vector((0, 0, 1.15))
-M(c, 69, mid + up(3.0, 12) + Vector((-.5, 0, 0)), mid, 35)
-M(c, SKY_SWITCH - 2, mid + up(2.6, 12) + Vector((-.35, 0, 0)), mid, 35)
+mid = Vector((0, 0, 1.3))
+M(c, 69, mid + up(3.0, 9) + Vector((-.5, 0, 0)), mid, 35)
+M(c, SKY_SWITCH - 2, mid + up(2.6, 9) + Vector((-.35, 0, 0)), mid, 35)
 M(c, 166, mid + up(2.9, 22) + Vector((-.3, 0, 0)), mid + Vector((0, 0, .35)), 32)
 S.Cameras.shake(c, SKY_SWITCH - 1, SKY_SWITCH + 6, .03, 1)
 
 c = cams.shot('C', SHOTS['C'][0], 45)                                   # close-medium, slow drift
-chest = Vector((0, 0, 1.3))
-M(c, 167, chest + up(2.0, 16) + Vector((.45, 0, 0)), chest, 45)
-M(c, 226, chest + up(1.8, 18) + Vector((.2, 0, 0)), chest + Vector((0, 0, .05)), 45)
+chest = Vector((0, 0, 1.45))
+M(c, 167, chest + up(2.2, 14) + Vector((.45, 0, 0)), chest, 45)
+M(c, 226, chest + up(1.9, 15) + Vector((.2, 0, 0)), chest + Vector((0, 0, .05)), 45)
 S.Cameras.shake(c, NEON_ON - 1, NEON_ON + 6, .03, 2)
 
 c = cams.shot('D', SHOTS['D'][0], 40)                                   # medium, then big pull back

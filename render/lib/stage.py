@@ -238,7 +238,8 @@ def particles(name, emitter, f0, f1, count, inst, lifetime, vel=(0, 0, 0), gravi
     ps.normal_factor = 0.0; ps.object_align_factor = vel; ps.factor_random = 0.05
     ps.effector_weights.gravity = gravity
     ps.render_type = 'OBJECT'; ps.instance_object = inst; ps.particle_size = size; ps.size_random = size_random
-    if align_velocity: ps.use_rotations = True; ps.rotation_mode = 'VEL'; ps.angular_velocity_mode = 'NONE'
+    ps.use_rotations = bool(align_velocity)
+    if align_velocity: ps.rotation_mode = 'VEL'; ps.angular_velocity_mode = 'NONE'
     emitter.show_instancer_for_render = False; emitter.show_instancer_for_viewport = False
     pc = ps_mod.particle_system.point_cache; pc.frame_start = min(f0, 1) - 1; pc.frame_end = max(f1 + lifetime, 1)
     inst.location = (0, 0, -1000)
