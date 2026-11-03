@@ -112,8 +112,8 @@ class Face:
 
     def lids(self, f, close, side=None):
         d = self.eye_gap
-        self._move(self._sel('DEF-lid.T', side), f, (0, 0, -0.85 * d * close))
-        self._move(self._sel('DEF-lid.B', side), f, (0, 0, 0.15 * d * close))
+        self._move(self._sel('DEF-lid.T', side), f, (0, 0, -1.7 * d * close))
+        self._move(self._sel('DEF-lid.B', side), f, (0, 0, 0.3 * d * close))
 
     def smirk(self, f, amount, side='L'):
         lips = [b for n, b in self.bones.items() if n.startswith('DEF-lip')]
@@ -121,9 +121,9 @@ class Face:
         xmax = max(abs(self._c(b.name, Vector()).x) for b in lips)
         c = [b for b in lips if side_of(b.name) == side and abs(self._c(b.name, Vector()).x) > 0.7 * xmax]
         s = self.eye_gap
-        self._move(c, f, (0.15 * s * amount, -0.05 * s * amount, 0.35 * s * amount))
+        self._move(c, f, (0.35 * s * amount, -0.1 * s * amount, 0.9 * s * amount))
         cheek = self._sel('DEF-cheek.B', side)
-        self._move(cheek, f, (0, 0, 0.15 * s * amount))
+        self._move(cheek, f, (0, 0, 0.4 * s * amount))
 
     def pucker(self, f, amount):
         """Rounded lips for OO/W sounds."""
@@ -140,7 +140,7 @@ class Face:
         s = self.eye_gap
         for b in bs:
             inner = abs(self._c(b.name, Vector()).x) < mid
-            dz = -0.45 * s * inner_down if inner else 0.45 * s * outer_up
+            dz = -1.0 * s * inner_down if inner else 1.0 * s * outer_up
             self._move([b], f, (0, 0, dz))
 
     def neutral(self, f):
