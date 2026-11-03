@@ -1,0 +1,10 @@
+{
+ "language": "English",
+ "voice_instruct": "Adult female in her late thirties, warm gentle mezzo voice, calm and kind, softly encouraging like a caring mentor, clear crisp articulation, slight polished AI-assistant smoothness, quietly amused, intimate in-ear headset delivery, American accent.",
+ "ref_text": "Good evening. All systems are online, and I'm right here with you whenever you need me.",
+ "lines": [
+  {"text": "Good evening. Suit diagnostics are green, and your heart rate is a little high.", "pause": 0.5},
+  {"text": "Would you like me to activate night vision, or should we keep pretending you can see in the dark?", "pause": 0.5},
+  {"text": "Incoming at your three o'clock. Web shooters are ready whenever you are."}
+ ]
+}
