@@ -16883,7 +16883,7 @@ version 0.6.9
     '<div class="kb-sec"><div class="kb-lbl">Bays</div>' +
     '<div class="kb-bay"><span><b>A</b> <span id="kb-a">empty</span></span><span><button id="kb-loadA">Load</button></span></div>' +
     '<div class="kb-bay"><span><b>B</b> <span id="kb-b">empty</span></span><span><button id="kb-loadB">Load</button><button id="kb-clearB">Clear</button></span></div>' +
-    '<button id="kb-frame">Frame both</button><button id="kb-fa">Focus A</button><button id="kb-fb">Focus B</button>' +
+    '<button id="kb-match">Match B size to A</button><button id="kb-frame">Frame both</button><button id="kb-fa">Focus A</button><button id="kb-fb">Focus B</button>' +
     '<div class="kb-hint">Load several files into B to merge them.</div></div>' +
     '<div class="kb-sec"><div class="kb-lbl">Selection</div><div class="kb-sel" id="kb-sel">click a part · shift-click to add</div></div>' +
     '<div class="kb-sec"><div class="kb-lbl">Clip-on</div>' +
@@ -16974,7 +16974,7 @@ version 0.6.9
         // auto-scale wildly different units roughly toward bay A size
         var b = boxOf(root), s = b.getSize(new THREE.Vector3()).length();
         var target = st.model ? st.box.getSize(new THREE.Vector3()).length() : 2;
-        if (s > 0 && (s / target > 50 || target / s > 50)) root.scale.multiplyScalar(target / s);
+        if (s > 0 && (s / target > 4 || target / s > 4)) root.scale.multiplyScalar(target / s);
         // place merged files side by side inside B
         if (bContent.children.length) { var bb = boxOf(bContent); var rb = boxOf(root); root.position.x += bb.max.x - rb.min.x + .05; }
         bContent.add(root); bNames.push(mains[i].name);
@@ -17016,6 +17016,14 @@ version 0.6.9
   }
   function frameBoth() { var b = new THREE.Box3(); if (st.model) b.union(boxOf(st.model)); if (hasB()) b.union(boxOf(bContent)); frameBox(b); }
   $("kb-frame").onclick = frameBoth;
+  $("kb-match").onclick = function () {
+    if (!st.model || !hasB()) return V.toast && V.toast("Load models in both bays first.", "info", "Match size");
+    var sa = boxOf(st.model).getSize(new THREE.Vector3()).length(), sb = boxOf(bContent).getSize(new THREE.Vector3()).length();
+    if (!sa || !sb) return; var k = sa / sb, b4 = bContent.scale.clone();
+    bContent.scale.multiplyScalar(k); layoutB(); frameBoth();
+    push({ name: "match size", undo: function () { bContent.scale.copy(b4); layoutB(); }, redo: function () { bContent.scale.copy(b4).multiplyScalar(k); layoutB(); } });
+    logIt("Scaled Bay B by " + k.toPrecision(4) + " to match Bay A");
+  };
   $("kb-fa").onclick = function () { if (st.model) frameBox(boxOf(st.model)); };
   $("kb-fb").onclick = function () { if (hasB()) frameBox(boxOf(bContent)); };
 
@@ -17032,7 +17040,7 @@ version 0.6.9
     selBoxes.forEach(function (b) { scene.remove(b); b.geometry.dispose(); }); selBoxes = [];
     sel.forEach(function (o) { var h = new THREE.BoxHelper(o, 0x36e2ff); h.userData.kbHelper = true; h.userData.vHelper = true; h.material.depthTest = false; h.renderOrder = 999; scene.add(h); selBoxes.push(h); });
     $("kb-sel").textContent = sel.length ? sel.map(function (o) { return (o.name || o.type) + " [" + bayOf(o) + "]"; }).join(", ") : "click a part · shift-click to add";
-    if (sel.length && !boxMode) gizmo.attach(sel[0]); else if (!boxMode) gizmo.detach();
+    if (sel.length && !boxMode && !clipMode) gizmo.attach(sel[0]); else if (!boxMode) gizmo.detach();
     inspector();
   }
   function setSel(list) { sel = list.filter(Boolean); drawSel(); }
@@ -17082,7 +17090,8 @@ version 0.6.9
   gizmo.addEventListener("objectChange", function () { selBoxes.forEach(function (b) { b.update(); }); inspector(true); });
   function snap(o) { return { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone(), parent: o.parent }; }
   function restore(o, s) { o.position.copy(s.p); o.quaternion.copy(s.q); o.scale.copy(s.s); o.updateMatrixWorld(true); drawSel(); }
-  function v3(v) { return "(" + v.x.toFixed(3) + ", " + v.y.toFixed(3) + ", " + v.z.toFixed(3) + ")"; }
+  function nf(x) { return Math.abs(x) >= .01 || x === 0 ? x.toFixed(3) : x.toPrecision(3); }
+  function v3(v) { return "(" + nf(v.x) + ", " + nf(v.y) + ", " + nf(v.z) + ")"; }
   function v3deg(r) { var d = THREE.MathUtils.radToDeg; return "(" + d(r.x).toFixed(1) + "°, " + d(r.y).toFixed(1) + "°, " + d(r.z).toFixed(1) + "°)"; }
   function setMode(m) { gizmo.setMode(m); panel.querySelectorAll("[data-g]").forEach(function (b) { b.classList.toggle("on", b.dataset.g === m); }); }
   panel.querySelectorAll("[data-g]").forEach(function (b) { b.onclick = function () { setMode(b.dataset.g); }; });
@@ -17110,7 +17119,7 @@ version 0.6.9
     box.querySelectorAll("input").forEach(function (inp) {
       if (document.activeElement === inp) return;
       var val = o[inp.dataset.k][inp.dataset.a]; if (inp.dataset.k === "rotation") val = d(val);
-      inp.value = (+val).toFixed(inp.dataset.k === "rotation" ? 1 : 3);
+      inp.value = inp.dataset.k === "rotation" ? (+val).toFixed(1) : nf(+val);
     });
   }
 
@@ -17167,7 +17176,7 @@ version 0.6.9
 
   /* ---------- snap to surface (clip-on) ---------- */
   var clipMode = false;
-  $("kb-clip").onclick = function () { clipMode = !clipMode; this.classList.toggle("on", clipMode); renderer.domElement.style.cursor = clipMode ? "crosshair" : ""; };
+  $("kb-clip").onclick = function () { clipMode = !clipMode; this.classList.toggle("on", clipMode); renderer.domElement.style.cursor = clipMode ? "crosshair" : ""; if (clipMode) gizmo.detach(); else drawSel(); };
   function clipTo(h) {
     var o = sel[0], b4 = snap(o);
     var n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld).normalize() : new THREE.Vector3(0, 1, 0);
