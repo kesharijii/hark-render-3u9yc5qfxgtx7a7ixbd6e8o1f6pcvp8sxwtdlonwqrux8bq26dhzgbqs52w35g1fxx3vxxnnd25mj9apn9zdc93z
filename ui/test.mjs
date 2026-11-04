@@ -7,11 +7,10 @@ const logs=[]; p.on('console',m=>logs.push(m.type()+': '+m.text())); p.on('pagee
 const client=await p.createCDPSession(); await client.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:process.cwd()+'/'+out});
 await p.goto('file://'+process.cwd()+'/ui/vanta.html'); await new Promise(r=>setTimeout(r,2500));
 const step=async(name,fn)=>{try{const r=await p.evaluate(fn);console.log('STEP',name,'OK',JSON.stringify(r)??'');}catch(e){console.log('STEP',name,'FAIL',e.message);} await new Promise(r=>setTimeout(r,1500)); await p.screenshot({path:`${out}/${name}.png`});};
-const A='https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/DamagedHelmet/glTF-Binary/DamagedHelmet.glb';
+const A='https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb';
 const B='https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/ToyCar/glTF-Binary/ToyCar.glb';
 await step('0_boot',()=>({ready:!!window.__vantaReady,kb:!!(window.VANTA&&VANTA.kitbash)}));
-await step('1_loadA',async()=>{await VANTA.loadFromURL(arguments[0]); return VANTA.state.fileName;}).catch(()=>{});
-await p.evaluate(async(A)=>{await VANTA.loadFromURL(A);},A); await new Promise(r=>setTimeout(r,4000)); await p.screenshot({path:`${out}/1_A.png`});
+await p.evaluate(async(A)=>{await VANTA.loadFromURL(A);},A); await new Promise(r=>setTimeout(r,6000)); console.log('A', await p.evaluate(()=>VANTA.state.fileName+' model='+!!VANTA.state.model)); await p.screenshot({path:`${out}/1_A.png`});
 await p.evaluate(async(B)=>{const r=await fetch(B);const bl=await r.blob();await VANTA.kitbash.loadIntoB([new File([bl],'ToyCar.glb')]);},B); await new Promise(r=>setTimeout(r,4000)); await p.screenshot({path:`${out}/2_AB.png`});
 await step('3_selectB_attach',()=>{let m=null;VANTA.kitbash.bay.traverse(o=>{if(o.isMesh&&!m)m=o;});const pre=VANTA.state.model?(()=>{let n=0;VANTA.state.model.traverse(o=>{if(o.isMesh)n++});return n})():0;
   // simulate selection via internal path: dispatch is hard; use attach API after programmatic selection

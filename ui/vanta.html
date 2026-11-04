@@ -16982,6 +16982,7 @@ version 0.6.9
       } catch (err) { V.toast && V.toast("Bay B: " + (err.message || err), "error", "Load failed"); }
     }
     V.showProgress && V.showProgress(false);
+    if (hasB() && V.$ && V.$("empty")) V.$("empty").hidden = true;
     layoutB(); refreshBays(); frameBoth();
   }
   inpB.onchange = function () { loadIntoB(inpB.files); inpB.value = ""; };
