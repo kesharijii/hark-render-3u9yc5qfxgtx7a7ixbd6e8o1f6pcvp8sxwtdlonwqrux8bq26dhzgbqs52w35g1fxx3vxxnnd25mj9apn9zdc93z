@@ -62,11 +62,11 @@ nt.links.new(lp.outputs['Is Camera Ray'], mix.inputs[0]); nt.links.new(bg.output
 nt.links.new(mix.outputs[0], out.inputs['Surface'])
 
 floor_m = bpy.data.materials.new('Floor'); floor_m.use_nodes = True
-fb = floor_m.node_tree.nodes['Principled BSDF']; fb.inputs['Base Color'].default_value = (.02, .018, .022, 1); fb.inputs['Roughness'].default_value = .3
-bpy.ops.mesh.primitive_cylinder_add(radius=1.1, depth=.06, vertices=96, location=(0, 0, -.03)); bpy.context.object.data.materials.append(floor_m)
+fb = floor_m.node_tree.nodes['Principled BSDF']; fb.inputs['Base Color'].default_value = (.006, .005, .007, 1); fb.inputs['Roughness'].default_value = .4
+bpy.ops.mesh.primitive_cylinder_add(radius=.75, depth=.06, vertices=96, location=(0, 0, -.03)); bpy.context.object.data.materials.append(floor_m)
 ring_m = bpy.data.materials.new('Ring'); ring_m.use_nodes = True
 rb = ring_m.node_tree.nodes['Principled BSDF']; rb.inputs['Emission Color'].default_value = (1, .2, .15, 1); rb.inputs['Emission Strength'].default_value = 6
-bpy.ops.mesh.primitive_torus_add(major_radius=1.1, minor_radius=.008, location=(0, 0, 0)); bpy.context.object.data.materials.append(ring_m)
+bpy.ops.mesh.primitive_torus_add(major_radius=.75, minor_radius=.008, location=(0, 0, 0)); bpy.context.object.data.materials.append(ring_m)
 
 def area(name, loc, energy, color, size):
     d = bpy.data.lights.new(name, 'AREA'); d.energy = energy; d.color = color; d.size = size
@@ -82,7 +82,7 @@ cam = bpy.data.objects.new('Cam', cam_d); sc.collection.objects.link(cam); sc.ca
 tgt = bpy.data.objects.new('Tgt', None); sc.collection.objects.link(tgt)
 c = cam.constraints.new('TRACK_TO'); c.target = tgt; c.track_axis = 'TRACK_NEGATIVE_Z'; c.up_axis = 'UP_Y'
 cam_d.dof.focus_object = tgt
-for f, loc, t in ((1, (0, -4.6, 1.25), (0, 0, .88)), (NFR, (0, -3.7, 1.35), (0, 0, .98))):   # slow push in while she spins
+for f, loc, t in ((1, (0, -3.3, 1.15), (0, 0, .9)), (NFR, (0, -2.75, 1.2), (0, 0, .95))):   # slow push in while she spins
     cam.location = loc; cam.keyframe_insert('location', frame=f); tgt.location = t; tgt.keyframe_insert('location', frame=f)
 
 r = sc.render; r.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = SPP; sc.cycles.use_denoising = True
