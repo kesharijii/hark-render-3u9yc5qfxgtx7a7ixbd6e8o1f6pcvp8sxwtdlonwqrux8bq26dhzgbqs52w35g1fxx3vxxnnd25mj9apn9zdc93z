@@ -48,7 +48,7 @@ world = S.World(sc, AD, [
     ('night', 'satara_night_2k.hdr', .7, 1.0, 40),
     ('rain', 'potsdamer_platz_2k.hdr', .45, .3, 0),
     ('frozen', 'potsdamer_platz_2k.hdr', .35, 0.0, 0),
-    ('gold', 'small_harbour_sunset_2k.hdr', 1.0, 1.15, 200),
+    ('gold', 'small_harbour_sunset_2k.hdr', .75, 1.1, 200),
     ('void', 'satara_night_2k.hdr', .0, 1.0, 0),
 ])
 world.go(SHOTS['B'][0], 'rain', ramp=1)
@@ -82,17 +82,16 @@ for n, length, wdt, speed in (('Minute', 1.25, .06, 2.6), ('Hour', .8, .09, .25)
 for o in clock: S.show(o, SHOTS['B'][0], SHOTS['C'][0])
 
 drop = S.prim('cylinder', 'Drop', S.mat('Rain', (.8, .85, 1), .05, (.6, .7, .9), .5, transmission=.6), radius=.0035, depth=.22, vertices=6)
-rain_box = S.prim('plane', 'RainCloud', size=9, location=(0, -1.0, 5.5))
-rain = S.particles('Rain', rain_box, SHOTS['B'][0] - 30, FREEZE, 9000, drop, 26, vel=(0, 0, -9), gravity=.3)
-for f, v in ((FREEZE - 1, 1.0), (FREEZE + 2, 0.0)): rain.time_tweak = v; rain.keyframe_insert('time_tweak', frame=f)  # time stops
+rain_box = S.prim('plane', 'RainCloud', size=9, location=(0, 1.3, 5.5)); rain_box.scale = (1, .6, 1)   # keep drops off the lens
+rain = S.particles('Rain', rain_box, SHOTS['B'][0] - 30, FREEZE + 2, 7000, drop, 26, vel=(0, 0, -9), gravity=.3)
 rain_mod = rain_box.modifiers['Rain']
-for f, on in ((1, False), (SHOTS['B'][0], True), (SHOTS['C'][0], False)): rain_mod.show_render = on; rain_mod.keyframe_insert('show_render', frame=f)
+for f, on in ((1, False), (SHOTS['B'][0], True), (FREEZE + 1, False)): rain_mod.show_render = on; rain_mod.keyframe_insert('show_render', frame=f)
 
 # ------------------------------------------------------------ wish two: gold rains and piles up
 gold = bpy.data.materials.new('CoinPile'); gold.use_nodes = True
 nt = gold.node_tree; bs = nt.nodes['Principled BSDF']
 bs.inputs['Base Color'].default_value = (1, .7, .25, 1); bs.inputs['Metallic'].default_value = 1; bs.inputs['Roughness'].default_value = .28
-vor = nt.nodes.new('ShaderNodeTexVoronoi'); vor.inputs['Scale'].default_value = 28
+vor = nt.nodes.new('ShaderNodeTexVoronoi'); vor.inputs['Scale'].default_value = 55
 bump = nt.nodes.new('ShaderNodeBump'); bump.inputs['Strength'].default_value = .8
 nt.links.new(vor.outputs['Distance'], bump.inputs['Height']); nt.links.new(bump.outputs['Normal'], bs.inputs['Normal'])
 mound = S.prim('uv_sphere', 'GoldPile', gold, radius=1.8, segments=48, ring_count=24, location=(0, .1, 0))
@@ -115,11 +114,11 @@ glowL = S.area('GoldBounce', (0, -1.2, .1), FACE, 0, (1, .7, .3), 2.0)
 S.light_key(key, SHOTS['B'][0] - 1, 240, (1, .82, .9))
 S.light_key(key, SHOTS['B'][0], 220, (.8, .85, 1.0)); S.light_key(rim, SHOTS['B'][0], 220, (.8, .85, 1.0))
 S.light_key(key, FREEZE + 3, 200, (.7, .8, 1.0))                        # cold, drained
-S.light_key(key, SHOTS['C'][0], 260, (1, .78, .55)); S.light_key(rim, SHOTS['C'][0], 300, (1, .7, .4))
-S.light_key(glowL, GOLD0, 0); S.light_key(glowL, GOLD1, 160)
-S.light_key(glowL, SHOTS['D'][0] - 1, 160); S.light_key(glowL, SHOTS['D'][0], 0)
+S.light_key(key, SHOTS['C'][0], 170, (1, .8, .6)); S.light_key(rim, SHOTS['C'][0], 260, (1, .7, .4))
+S.light_key(glowL, GOLD0, 0); S.light_key(glowL, GOLD1, 90)
+S.light_key(glowL, SHOTS['D'][0] - 1, 90); S.light_key(glowL, SHOTS['D'][0], 0)
 for L in (fill, rim): S.light_key(L, DARK, L.data.energy); S.light_key(L, DARK + 6, 0)   # lights die
-S.light_key(key, DARK, 260); S.light_key(key, DARK + 6, 110, (1, .75, .85))
+S.light_key(key, DARK, 170); S.light_key(key, DARK + 6, 110, (1, .75, .85))
 wand_light = S.point_light('WandLight', (0, 0, 0), 2.5, (1, .75, .4), .03); wand_light.parent = tip
 S.light_key(wand_light, FREEZE - 2, 2.5); S.light_key(wand_light, FREEZE, 300); S.light_key(wand_light, FREEZE + 4, 2.5)
 S.light_key(wand_light, DARK, 2.5); S.light_key(wand_light, DARK + 6, .4)
@@ -194,6 +193,14 @@ M(c, e1, EYES + up(1.0, 18) + Vector((.03, 0, -.02)), EYES + Vector((0, 0, -.03)
 
 # ------------------------------------------------------------ render
 S.bake_particles(-40, NFR)
+# time stops: the drops alive at the snap become real, motionless geometry until the next shot
+sc.frame_set(FREEZE)
+bpy.ops.object.select_all(action='DESELECT'); rain_box.select_set(True); bpy.context.view_layer.objects.active = rain_box
+rain_mod.show_viewport = True
+bpy.ops.object.duplicates_make_real()
+frozen = [o for o in bpy.context.selected_objects if o is not rain_box]
+for o in frozen: S.show(o, FREEZE + 1, SHOTS['C'][0])
+print('FROZEN drops', len(frozen))
 S.render_setup(sc, OUT, spp=SPP)
 sc.frame_start, sc.frame_end = START, min(END, NFR)
 print('RENDER', START, min(END, NFR))
