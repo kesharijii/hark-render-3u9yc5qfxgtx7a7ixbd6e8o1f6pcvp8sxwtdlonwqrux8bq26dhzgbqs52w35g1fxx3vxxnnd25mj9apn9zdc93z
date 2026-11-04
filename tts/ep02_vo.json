@@ -1,0 +1,13 @@
+{
+ "language": "English",
+ "ref_audio": "tts/ref/lust_ref.wav",
+ "ref_text": "Oh, darling, you really thought you could hide from me? How sweet. I've watched you for a very long time. Every little lie. Every little secret. And now, you're mine.",
+ "gap": 0.5,
+ "lines": [
+  {"text": "You made three wishes last night. I granted them all... exactly."},
+  {"text": "\"I want more time.\" Done. Time's stopped. Forever. You're welcome."},
+  {"text": "\"I want to be rich.\" Rich. Also buried. Details."},
+  {"text": "\"I want someone to talk to me every night.\" Well... here I am."},
+  {"text": "Next wish is yours. Choose your words... carefully."}
+ ]
+}
