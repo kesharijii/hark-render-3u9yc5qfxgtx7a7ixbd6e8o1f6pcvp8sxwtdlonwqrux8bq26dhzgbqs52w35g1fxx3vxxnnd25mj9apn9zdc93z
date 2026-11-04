@@ -71,21 +71,25 @@ class Curve:
 
 
 # Emotions as shape mixes. Values are shape weights (1.0 = full shape).
-EXPR = {
+EXPR = {   # v5: softer and closer to symmetric; one-sided pulls kept small so lips and brows hold their shape
     'neutral':  {},
-    'smug':     {'smile_L': .8, 'smile_R': .25, 'squint_L': .3, 'squint_R': .3, 'brow_up_L': .55},
-    'sultry':   {'lids_L': .35, 'lids_R': .35, 'smile_L': .5, 'brow_up_L': .15, 'brow_up_R': .15},
-    'menace':   {'brow_down': .9, 'squint_L': .5, 'squint_R': .5, 'smile_L': .35, 'sneer_L': .3},
-    'delight':  {'smile_L': 1, 'smile_R': 1, 'squint_L': .45, 'squint_R': .45, 'brow_up_L': .35, 'brow_up_R': .35},
-    'surprise': {'brow_up_L': 1, 'brow_up_R': 1, 'wide_eyes': 1, 'jaw': .25},
-    'annoyed':  {'frown': .6, 'brow_down': .5, 'squint_L': .3, 'squint_R': .3, 'sneer_R': .25},
-    'pout':     {'frown': .5, 'brow_sad': .6, 'lids_L': .15, 'lids_R': .15},
-    'tease':    {'smile_L': .7, 'smile_R': .4, 'brow_up_R': .65, 'squint_L': .35},
+    'smug':     {'smile_L': .5, 'smile_R': .3, 'squint_L': .2, 'squint_R': .2, 'brow_up_L': .3},
+    'sultry':   {'lids_L': .3, 'lids_R': .3, 'smile_L': .3, 'smile_R': .2, 'brow_up_L': .1, 'brow_up_R': .1},
+    'menace':   {'brow_down': .55, 'squint_L': .35, 'squint_R': .35, 'smile_L': .25, 'smile_R': .15, 'sneer_L': .12},
+    'delight':  {'smile_L': .7, 'smile_R': .7, 'squint_L': .3, 'squint_R': .3, 'brow_up_L': .25, 'brow_up_R': .25},
+    'surprise': {'brow_up_L': .65, 'brow_up_R': .65, 'wide_eyes': .7, 'jaw': .2},
+    'annoyed':  {'frown': .35, 'brow_down': .35, 'squint_L': .2, 'squint_R': .2},
+    'pout':     {'frown': .3, 'brow_sad': .35, 'lids_L': .12, 'lids_R': .12},
+    'tease':    {'smile_L': .45, 'smile_R': .3, 'brow_up_R': .35, 'squint_L': .2},
 }
 
 
+CAP = {'brow_up': .7, 'brow_down': .7, 'brow_sad': .6, 'smile': .8, 'sneer': .5, 'frown': .6,
+       'vis_wide': .7, 'vis_round': .7, 'vis_press': .8, 'squint': .6, 'wide_eyes': .8}
+
+
 class Face:
-    def __init__(self, arm, report=print, seed=3, gain=1.5):
+    def __init__(self, arm, report=print, seed=3, gain=1.0):
         self.arm, self.report, self.gain = arm, report, gain
         self.rng = random.Random(seed)
         self.centroids = self._centroids()
@@ -288,7 +292,7 @@ class Face:
         n = len(a)
         self._dense('jaw', start_frame + n + 1, 0.0)
         for i in range(n):   # cheeks and lower lids ride on the jaw, like a real face
-            self._dense('squint_L', start_frame + i, .18 * a[i], 'add'); self._dense('squint_R', start_frame + i, .18 * a[i], 'add')
+            self._dense('squint_L', start_frame + i, .1 * a[i], 'add'); self._dense('squint_R', start_frame + i, .1 * a[i], 'add')
         if nods:   # stressed syllables: nod, brow pop (sometimes one brow), a little head tilt
             last = -99
             for i in range(1, n - 1):
@@ -299,8 +303,8 @@ class Face:
                     tdir = self.rng.choice((-1, 1))
                     for k, v in enumerate((.4, 1.0, .8, .55, .3, .12)):
                         self._dense('nod', f + k, v)
-                        if one: self._dense(f'brow_up_{sd}', f + k, .7 * v, 'add')
-                        else: self._dense('brow_up_L', f + k, .45 * v, 'add'); self._dense('brow_up_R', f + k, .45 * v, 'add')
+                        if one: self._dense(f'brow_up_{sd}', f + k, .3 * v, 'add')
+                        else: self._dense('brow_up_L', f + k, .22 * v, 'add'); self._dense('brow_up_R', f + k, .22 * v, 'add')
                         self._dense('tilt', f + k, v * tdir, 'add')
                     last = i
         return n
@@ -334,20 +338,23 @@ class Face:
         for ch, d in self.dense.items():
             w[ch] = w.get(ch, 0.0) + d.get(f, 0.0)
         # micro-motion: a living face never holds perfectly still
-        for k, amp, fr in (('brow_up_L', .12, .11), ('brow_up_R', .12, .13), ('smile_L', .1, .07),
-                           ('smile_R', .08, .09), ('squint_L', .08, .17), ('squint_R', .08, .19)):
+        for k, amp, fr in (('brow_up_L', .06, .11), ('brow_up_R', .06, .13), ('smile_L', .05, .07),
+                           ('smile_R', .04, .09), ('squint_L', .04, .17), ('squint_R', .04, .19)):
             w[k] = w.get(k, 0.0) + amp * (.5 + .5 * math.sin(f * fr + self.phase[k]))
         b = w.pop('blink', 0.0)
         for sd in SIDES:                      # a blink closes from wherever the lids are
             base = w.get(f'lids_{sd}', 0.0)
             w[f'lids_{sd}'] = base + (1.0 - base) * min(1.0, b)
         if w.get('vis_press'): w['jaw'] = w.get('jaw', 0.0) * (1 - w['vis_press'])
+        for k in list(w):   # stacked layers must never push a shape past its sculpted range
+            if k in self.shapes: w[k] = max(-.3, min(CAP.get(k.rsplit('_', 1)[0] if k[-2:] in ('_L', '_R') else k, 1.0), w[k]))
         return w
 
     def bake(self, f0, f1, sway=True):
         curves = self._expr_curves()
         mats = {n: b.bone.matrix_local.to_3x3().inverted() for n, b in self.bones.items()}
         used = {n for d in self.shapes.values() for n in d}
+        lim = {n: max(d[n].length for d in self.shapes.values() if n in d) for n in used}   # no bone travels further than its biggest single shape
         jaw = self.bones.get('DEF-jaw')
         hq = self.head.bone.matrix_local.to_quaternion() if self.head else None
         if self.head: self.head.rotation_mode = 'QUATERNION'
@@ -359,6 +366,7 @@ class Face:
                 if not wt or k not in self.shapes: continue
                 for n, v in self.shapes[k].items(): off[n] += v * wt
             for n in used:
+                if off[n].length > lim[n]: off[n] = off[n] * (lim[n] / off[n].length)
                 v = off[n] * self.s * self.gain
                 if side_of(n) == 'R': v.x = -v.x
                 b = self.bones[n]; b.location = mats[n] @ v

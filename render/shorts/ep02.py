@@ -38,7 +38,7 @@ print('TIMING', 'NFR', NFR, 'SHOTS', SHOTS, 'FREEZE', FREEZE, 'GOLD', GOLD0, GOL
 W = S.Witch(sc)
 glow = S.mat('Glow', (1, .8, .45), .3, (1., .72, .35), 25)
 wand, tip = W.wand(glow)
-face = Face(W.arm, gain=1.6)
+face = Face(W.arm)
 bpy.context.view_layer.update()
 EYES = W.point('head', .45)
 FACE = W.point('head', .3) + Vector((0, -.06, 0))
