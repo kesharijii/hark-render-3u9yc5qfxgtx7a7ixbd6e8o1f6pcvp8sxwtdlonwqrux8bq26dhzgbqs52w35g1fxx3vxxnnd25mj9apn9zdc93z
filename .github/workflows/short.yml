@@ -17,7 +17,7 @@ permissions:
 env:
   BLENDER_VERSION: "4.3.2"
   CHUNKS: 6
-  HDRIS: "potsdamer_platz satara_night cobblestone_street_night lebombo"
+  HDRIS: "potsdamer_platz satara_night cobblestone_street_night lebombo small_harbour_sunset"
 
 jobs:
   render:

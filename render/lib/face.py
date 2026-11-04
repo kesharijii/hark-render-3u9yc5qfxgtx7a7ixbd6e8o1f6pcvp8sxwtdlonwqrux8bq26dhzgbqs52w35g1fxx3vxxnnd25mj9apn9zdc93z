@@ -85,8 +85,8 @@ EXPR = {
 
 
 class Face:
-    def __init__(self, arm, report=print, seed=3):
-        self.arm, self.report = arm, report
+    def __init__(self, arm, report=print, seed=3, gain=1.5):
+        self.arm, self.report, self.gain = arm, report, gain
         self.rng = random.Random(seed)
         self.centroids = self._centroids()
         self._rebuild()
@@ -99,7 +99,9 @@ class Face:
         self.events = []                  # (frame, expression, amount)
         self.jaw_c, self.head_c = Curve(), Curve((0.0, 0.0, 0.0))
         self.dense = {}                   # channel -> {frame: value} (speech, blinks, nods)
+        self.phase = {k: self.rng.uniform(0, 6.28) for k in ('brow_up_L', 'brow_up_R', 'smile_L', 'smile_R', 'squint_L', 'squint_R')}
         self.head = self.pb.get('head')
+        self.eyes = self._eye_rig()
         report('FACE', len(self.bones), 'bones; unit', round(self.s, 4), 'shapes', sorted(self.shapes))
 
     # ---------------------------------------------------------------- rebuild
@@ -215,6 +217,39 @@ class Face:
         add('vis_press', mid_b, (0, 0, .35))
         return S
 
+    def _eye_rig(self):
+        """Bones that turn the eyeballs: whatever the eye meshes are weighted or parented to."""
+        found = {}
+        for sd in SIDES:
+            o = bpy.data.objects.get(f'eyes_{sd}')
+            cands = []
+            if o:
+                if o.parent_type == 'BONE' and o.parent_bone: cands.append(o.parent_bone)
+                cands += [g.name for g in o.vertex_groups if 'eye' in g.name.lower()]
+            cands += [n for n in (f'DEF-eye.{sd}', f'ORG-eye.{sd}', f'MCH-eye.{sd}', f'eye.{sd}') if n in self.pb]
+            for n in cands:
+                if n in self.pb: found[sd] = self.pb[n]; break
+        self.report('FACE eyes', {k: v.name for k, v in found.items()},
+                    'eye groups', [g.name for g in getattr(bpy.data.objects.get('eyes_L'), 'vertex_groups', [])][:8])
+        for b in found.values():
+            for c in list(b.constraints): c.mute = True
+            b.rotation_mode = 'XYZ'
+        return found
+
+    def gaze(self, f0, f1, fps, at_camera=.7):
+        """Saccades: quick eye jumps, held 0.6-2.2 s, mostly back to the lens."""
+        t = f0
+        while t < f1:
+            if self.rng.random() < at_camera: yaw, pitch = self.rng.uniform(-2, 2), self.rng.uniform(-1, 1)
+            else: yaw, pitch = self.rng.choice((-1, 1)) * self.rng.uniform(6, 12), self.rng.uniform(-5, 4)
+            for k in range(int(fps * self.rng.uniform(.6, 2.2))):
+                self._dense('gaze_yaw', t + k, yaw, 'set'); self._dense('gaze_pitch', t + k, pitch, 'set')
+            t += int(fps * self.rng.uniform(.6, 2.2))
+
+    def look(self, f0, f1, yaw, pitch):
+        for f in range(f0, f1 + 1):
+            self._dense('gaze_yaw', f, yaw, 'set'); self._dense('gaze_pitch', f, pitch, 'set')
+
     # ---------------------------------------------------------------- authoring
     def express(self, f, name, amount=1.0):
         """Hold expression `name` from frame f until the next express() call."""
@@ -227,7 +262,7 @@ class Face:
 
     def _dense(self, ch, f, v, mode='max'):
         d = self.dense.setdefault(ch, {})
-        d[f] = max(d.get(f, 0.0), v) if mode == 'max' else d.get(f, 0.0) + v
+        d[f] = v if mode == 'set' else (max(d.get(f, 0.0), v) if mode == 'max' else d.get(f, 0.0) + v)
 
     def speak(self, wav_path, start_frame, fps, gain=1.15, nods=True):
         """Jaw + wide/round/press lip shapes from loudness and brightness of the voice."""
@@ -252,12 +287,21 @@ class Face:
             if a[i] < .15 and len(win) and win.max() > .4: self._dense('vis_press', f, 1.0)
         n = len(a)
         self._dense('jaw', start_frame + n + 1, 0.0)
-        if nods:   # small nod on each stressed syllable
+        for i in range(n):   # cheeks and lower lids ride on the jaw, like a real face
+            self._dense('squint_L', start_frame + i, .18 * a[i], 'add'); self._dense('squint_R', start_frame + i, .18 * a[i], 'add')
+        if nods:   # stressed syllables: nod, brow pop (sometimes one brow), a little head tilt
             last = -99
             for i in range(1, n - 1):
-                if a[i] > .75 and a[i] >= a[i - 1] and a[i] >= a[i + 1] and i - last > 6:
-                    for k, v in enumerate((.4, 1.0, .6, .25)):
-                        self._dense('nod', start_frame + i + k, v)
+                if a[i] > .7 and a[i] >= a[i - 1] and a[i] >= a[i + 1] and i - last > 6:
+                    f = start_frame + i
+                    one = self.rng.random() < .35
+                    sd = self.rng.choice(SIDES)
+                    tdir = self.rng.choice((-1, 1))
+                    for k, v in enumerate((.4, 1.0, .8, .55, .3, .12)):
+                        self._dense('nod', f + k, v)
+                        if one: self._dense(f'brow_up_{sd}', f + k, .7 * v, 'add')
+                        else: self._dense('brow_up_L', f + k, .45 * v, 'add'); self._dense('brow_up_R', f + k, .45 * v, 'add')
+                        self._dense('tilt', f + k, v * tdir, 'add')
                     last = i
         return n
 
@@ -289,6 +333,10 @@ class Face:
         w = {k: c(f) for k, c in curves.items()}
         for ch, d in self.dense.items():
             w[ch] = w.get(ch, 0.0) + d.get(f, 0.0)
+        # micro-motion: a living face never holds perfectly still
+        for k, amp, fr in (('brow_up_L', .12, .11), ('brow_up_R', .12, .13), ('smile_L', .1, .07),
+                           ('smile_R', .08, .09), ('squint_L', .08, .17), ('squint_R', .08, .19)):
+            w[k] = w.get(k, 0.0) + amp * (.5 + .5 * math.sin(f * fr + self.phase[k]))
         b = w.pop('blink', 0.0)
         for sd in SIDES:                      # a blink closes from wherever the lids are
             base = w.get(f'lids_{sd}', 0.0)
@@ -311,7 +359,7 @@ class Face:
                 if not wt or k not in self.shapes: continue
                 for n, v in self.shapes[k].items(): off[n] += v * wt
             for n in used:
-                v = off[n] * self.s
+                v = off[n] * self.s * self.gain
                 if side_of(n) == 'R': v.x = -v.x
                 b = self.bones[n]; b.location = mats[n] @ v
                 b.keyframe_insert('location', frame=f)
@@ -320,12 +368,18 @@ class Face:
                 jaw.keyframe_insert('rotation_euler', frame=f)
             if self.head:
                 p, y, r = self.head_c(f)
-                p += 3.0 * w.get('nod', 0.0)
+                p += 5.0 * w.get('nod', 0.0)
+                r += 3.0 * w.get('tilt', 0.0)
                 if sway:
-                    y += 2.2 * math.sin(f * .07 + ph); r += 1.6 * math.sin(f * .045 + ph * 1.7)
+                    y += 4.0 * math.sin(f * .07 + ph) + 1.5 * math.sin(f * .19 + ph * .3)
+                    r += 3.0 * math.sin(f * .045 + ph * 1.7)
+                    p += 1.5 * math.sin(f * .061 + ph * 2.3)
                 q = Euler((math.radians(p), math.radians(y), math.radians(r)), 'XYZ').to_quaternion()
                 self.head.rotation_quaternion = hq.inverted() @ q @ hq
                 self.head.keyframe_insert('rotation_quaternion', frame=f)
+            for sd, b in self.eyes.items():
+                b.rotation_euler = (math.radians(w.get('gaze_pitch', 0.0)), 0, math.radians(-w.get('gaze_yaw', 0.0)))
+                b.keyframe_insert('rotation_euler', frame=f)
         self.report('FACE baked', f0, f1)
 
 

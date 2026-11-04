@@ -125,6 +125,42 @@ class Witch:
         for f in range(f0, f1 + 1, period // 2):
             t.scale = (1, 1 + (0.005 if (f // (period // 2)) % 2 else 0), 1); t.keyframe_insert('scale', frame=f)
 
+    def alive(self, f0, f1, seed=1, amount=1.0):
+        """Weight shift, chest sway and arm drift layered on top of the keyed poses (F-curve noise)."""
+        def base(bone):
+            b = self.pb[bone]
+            if b.rotation_mode != 'XYZ': b.rotation_mode = 'XYZ'
+            if not (self.arm.animation_data and self.arm.animation_data.action and
+                    self.arm.animation_data.action.fcurves.find(f'pose.bones["{bone}"].rotation_euler')):
+                b.rotation_euler = (0, 0, 0); b.keyframe_insert('rotation_euler', frame=f0)
+            b.keyframe_insert('location', frame=f0)
+        spec = {  # bone: (rotation strength rad, location strength, noise scale frames)
+            'torso': (.035, .012 / self.scale, 40), 'chest': (.05, 0, 28), 'hips': (.04, 0, 34),
+            'upper_arm_fk.L': (.08, 0, 22), 'upper_arm_fk.R': (.06, 0, 24),
+            'forearm_fk.L': (.1, 0, 18), 'forearm_fk.R': (.08, 0, 20),
+        }
+        for bone in spec:
+            if bone in self.pb: base(bone)
+        act = self.arm.animation_data.action
+        for i, (bone, (rs, ls, sc_)) in enumerate(spec.items()):
+            for path, st in (('rotation_euler', rs), ('location', ls)):
+                if not st: continue
+                for ax in range(3):
+                    fc = act.fcurves.find(f'pose.bones["{bone}"].{path}', index=ax)
+                    if not fc: continue
+                    m = fc.modifiers.new('NOISE'); m.scale = sc_; m.strength = st * amount * (1 if ax != 1 or path == 'location' else .5)
+                    m.phase = seed * 31.7 + i * 7.3 + ax * 3.1; m.blend_type = 'ADD'
+                    m.use_restricted_range = True; m.frame_start = f0; m.frame_end = f1; m.blend_in = 5; m.blend_out = 5
+
+    def gesture(self, f, side='L', size=1.0):
+        """A quick beat gesture: forearm lifts and settles back over ~10 frames."""
+        fa = f'forearm_fk.{side}'
+        b = self.pb[fa]; act = self.arm.animation_data.action
+        fc = [act.fcurves.find(f'pose.bones["{fa}"].rotation_euler', index=i) for i in range(3)]
+        cur = tuple(c.evaluate(f) if c else 0 for c in fc)
+        for df, k in ((0, 0), (3, 1), (6, .6), (10, 0)):
+            b.rotation_euler = (cur[0] + math.radians(28 * size * k), cur[1], cur[2]); b.keyframe_insert('rotation_euler', frame=f + df)
+
     def wand(self, glow_mat):
         wood = mat('WandWood', (0.09, 0.05, 0.03), 0.45)
         w = prim('cylinder', 'Wand', wood, radius=0.011, depth=0.42, vertices=12)
