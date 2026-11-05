@@ -1670,9 +1670,9 @@ for k in (2, 3):
 # ================================================================== v16: FUSION-FISSION HYBRID core, exterior detailing
 for o in list(bpy.data.objects):
     if o.name.startswith(('Arc', 'Anim_ArcSpin')): bpy.data.objects.remove(o)
-M_PLASMA = pbsdf('Plasma', (.3, .5, 1), 0, .2, (.3, .5, 1), 14)
+M_PLASMA = pbsdf('Plasma', (.3, .5, 1), 0, .2, (.3, .5, 1), 7)
 M_PLASMAH = pbsdf('PlasmaHalo', (.5, .3, 1), 0, .3, (.55, .3, 1), 3)
-M_CHER = pbsdf('Cherenkov', (.08, .3, 1), 0, .2, (.1, .4, 1), 5)
+M_CHER = pbsdf('Cherenkov', (.08, .3, 1), 0, .2, (.1, .4, 1), 1.8)
 M_ROD = pbsdf('ControlRod', (.06, .06, .07), .8, .35)
 M_TANK = glass('TankGlass', (.85, .95, 1), .02)
 T0, T1 = ZA + .35, ZA + 2.85
@@ -1700,7 +1700,7 @@ for k in range(14):
     a = k * 2 * math.pi / 14; Tor(f'FieldCoil{k}', (EX + .68 * math.cos(a), .68 * math.sin(a), zc_), .3, .022, M_COPPER, rot=(90, 0, math.degrees(a) + 90), ms=32, ns=6)
 Cyl('FusionSolenoid', (EX, 0, zc_), .16, 1.6, M_RIB, v=32)
 Cyl('CorePlinth', (EX, 0, (T0 + zc_ - .45) / 2), .35, zc_ - .45 - T0, M_ARCRIM, v=32)
-for nm_, loc_, col_, e_ in (('ReactorGlow', (EX + 1.9, 0, zc_), (.3, .5, 1), 700), ('ReactorLight', (EX, 0, zc_ + .45), (.55, .35, 1), 250)):
+for nm_, loc_, col_, e_ in (('ReactorGlow', (EX + 1.9, 0, zc_), (.3, .5, 1), 300), ('ReactorLight', (EX, 0, zc_ + .45), (.55, .35, 1), 120)):
     L_ = bpy.data.objects.get(nm_)
     if L_: L_.location = loc_; L_.data.energy = e_; L_.data.color = col_
 print('MODEL v16 hybrid core: fuel assemblies 40, control rods 8, plasma R .68')
@@ -1888,8 +1888,8 @@ if DRY:
     shot('x1_exterior', 120, (48, -39, 21), (0, 0, 0), 35, pad=False)
     shot('x2_top_detail', 120, (6, -16, 14), (-4, 0, 1), 30, pad=False)
     shot('x3_rear', 120, (-52, 30, 14), (0, 0, 0), 35, pad=False)
-    shot('r1_hybrid_core', 240, (XSB - .7, -.9, ZA + 1.9), (EX, 0, zc_), 20)
-    shot('r2_core_close', 240, (EX + 2.4, 1.1, zc_ + .9), (EX, 0, zc_), 26)
+    shot('r1_hybrid_core', 240, (XSB + .2, -.6, ZA + 2.1), (EX, 0, zc_ - .1), 18)
+    shot('r2_core_close', 240, (EX + 1.2, 2.25, zc_ + 1.0), (EX, 0, zc_ - .1), 18)
     shot('h5_reactor_window', 240, (-7.6, 1.9, Z0 + 1.9), (EX, 1.0, 1.7), 24)
     shot('h9_shield_stairs', 240, (-8.4, -.3, Z0 + 1.6), (XSB - 1.5, 0, ZA + .9), 16)
     shot('c1_corridor', 160, (HC.x + HR + 1.2, 0, ZF + 1.65), (BR, 0, ZF + 1.3), 18)
