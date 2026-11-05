@@ -36,7 +36,7 @@ import numpy as np
 # v10: cut the Tripo disc wheels + nose strut out of the hull (islands seeded by the lowest vertices)
 import bmesh as _bm
 _me = hull.data; _n = len(_me.vertices); _c = np.empty(_n * 3, dtype=np.float32); _me.vertices.foreach_get('co', _c); _c = _c.reshape(-1, 3)
-_seed = _c[:, 2] < -0.065; print('MODEL wheel seeds', int(_seed.sum()))
+_seed = _c[:, 2] < -0.056; print('MODEL wheel seeds', int(_seed.sum()))
 _b = _bm.new(); _b.from_mesh(_me); _b.verts.ensure_lookup_table()
 _todo = [ _b.verts[i] for i in np.where(_seed)[0] ]; _kill = set(v.index for v in _todo)
 while _todo:
@@ -1070,8 +1070,8 @@ TOUR = [  # name, caption, frames, scene-frame range, waypoints (t, cam, target)
  ('engine', 'ENGINE ROOM  |  fusion core', 156, (90, 240), [(0, (EX + 4.4, 1.7, ZA + 2.3), (EX, 0, ZA + 1.6)), (1, (EX + 3.9, -.8, ZA + 1.9), (EX - .4, .2, ZA + 1.4))], 16),
  ('wing', 'WING CORRIDOR  |  port side', 132, (160, 160), [(0, (WX1 - .5, yc_, FW + 1.65), (WX0 - 3, yc_, FW + 1.3)), (1, (DOOR[1] + 1.4, yc_, ramp_floor(DOOR[1] + 1.4) + 1.65), (DOOR[0] - 2, yc_ + .6, ramp_floor(DOOR[0]) + 1.4))], 16),
  ('mess', 'MESS HALL  |  galley', 132, (215, 215), [(0, (PX1 - .5, PY0 + .4, FP + 1.8), (PX0, PY1 - .8, FP + .6)), (1, (PX1 - .8, PY1 - .5, FP + 1.75), (PX0 + .3, PY0 + .5, FP + .8))], 15),
- ('medbay', 'MED BAY  |  cargo hold', 132, (215, 215), [(0, (PX1 - .5, -(PY0 + .4), FP + 1.8), (PX0 + 1, -(PY1 - .8), FP + .6)), (1, (PX1 - .7, -(PY1 - .5), FP + 1.75), (PX0 + 1, -(PY0 + .5), FP + .7))], 15),
- ('cabin', 'CREW CABIN  |  1 of 8', 120, (160, 160), [(0, (xc2, -(HW - .5), ZF + 1.65), (ROOMS[2][0] + .3, -(HW + 1.6), ZF + .6)), (1, (ROOMS[2][1] - .5, -(HW + .2), ZF + 1.7), (ROOMS[2][0] + .3, -(HW + 1.6), ZF + .6))], 16),
+ ('medbay', 'MED BAY  |  cargo hold', 132, (215, 215), [(0, (PX0 + .6, -(PY0 + .5), FP + 1.85), (PX1 - 1.6, -(PY1 - .6), FP + .6)), (1, (PX0 + 1.4, -(PY0 + .45), FP + 1.8), (PX1 - 1.2, -(PY1 - .9), FP + .7))], 15),
+ ('cabin', 'CREW CABIN  |  1 of 8', 120, (160, 160), [(0, (ROOMS[2][1] - .45, -(HW + .2), ZF + 1.72), (ROOMS[2][0] + .3, -(HW + 1.6), ZF + .6)), (1, (ROOMS[2][1] - .8, -(HW + .45), ZF + 1.6), (ROOMS[2][0] + .2, -(HW + 1.3), ZF + .5))], 16),
  ('bridge', 'BRIDGE  |  live flight controls', 180, (130, 240), [(0, (px - 3.4, -.1, ZB + 1.8), (nose_end + 1, 0, ZB + 1.1)), (.55, (px - 1.2, -.05, ZB + 1.7), (px + 1.2, .3, ZB + .9)), (1, (px - .45, .2, ZB + 1.45), (px + .45, .9, ZB + .8))], 20),
  ('finale', 'ENGINES ONLINE', 144, (140, 240), [(0, (-44, -26, 5), (0, 0, 0)), (1, (-72, -44, 15), (4, 0, 1))], 30),
 ]
