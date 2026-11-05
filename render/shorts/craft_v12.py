@@ -1063,13 +1063,13 @@ print('MODEL hall carve hull faces', carve_faces(hull, t_hull))
 def glass(name, tint, rough=.02):
     m = pbsdf(name, tint, 0, rough); p = m.node_tree.nodes['Principled BSDF']
     p.inputs['Transmission Weight'].default_value = 1.0; p.inputs['IOR'].default_value = 1.45; return m
-M_HW = pbsdf('HallWall', (.66, .66, .64), .12, .42)
+M_HW = pbsdf('HallWall', (.52, .53, .53), .12, .5)
 M_HD = pbsdf('HallDark', (.11, .12, .14), .6, .32)
-M_HFL = pbsdf('HallFloor', (.085, .09, .1), .55, .28)
+M_HFL = pbsdf('HallFloor', (.028, .03, .034), .5, .3)
 M_RAILG = glass('RailGlass', (.85, .93, .97))
 M_LEADG = glass('LeadGlass', (.55, .85, .8), .03)
 M_SKYG = glass('SkyGlass', (.85, .93, 1))
-M_RING = pbsdf('RingLight', (1, .95, .85), 0, .5, (1, .92, .8), 9)
+M_RING = pbsdf('RingLight', (1, .95, .85), 0, .5, (1, .92, .8), 16)
 M_SHLD = pbsdf('ShieldConcrete', (.19, .2, .21), .1, .75)
 M_WOOD = pbsdf('Wood', (.33, .19, .09), 0, .45)
 M_LEAF = pbsdf('Leaf', (.06, .22, .07), 0, .6)
@@ -1241,7 +1241,7 @@ ann('GalleryHandrail', 3.97, 4.07, 0, 360, ZG + 1.05, ZG + 1.1, M_HD, step=2)
 for k in range(36): pbox(f'GalleryPost{k}', 4.02, k * 10 + 5, ZG + .55, (.04, .04, 1.1), M_HD)
 for k in range(48):
     a = k * 7.5
-    if not (ST[0] < a < ST[1] or 360 - ST[1] < a < 360 - ST[0]): Area(f'UnderGal{k}', pol(5.6, a, ZG - .32), .5, 45, (1, .9, .78))
+    if not (ST[0] < a < ST[1] or 360 - ST[1] < a < 360 - ST[0]): Area(f'UnderGal{k}', pol(5.6, a, ZG - .32), .4, 22, (1, .9, .78))
 for s in (1, -1):
     sg = 'P' if s > 0 else 'S'; a_t, a_b, r0, r1, n = ST
     da_ = (a_b - a_t) / n; rise = (ZG - Z0) / n
@@ -1361,12 +1361,73 @@ for k in range(8): Area(f'GalLight{k}', pol(6.1, 85 + k * 27.5, ZG + 2.7), .7, 5
 for a0, a1 in ((108, 150), (210, 252)):
     ann(f'Bench{a0}', 6.35, 6.85, a0, a1, Z0, Z0 + .45, M_FAB, step=2); ann(f'BenchBack{a0}', 6.8, 6.95, a0, a1, Z0 + .45, Z0 + .95, M_FAB, step=2)
 for a in (103, 155, 205, 257):
-    Cyl(f'Planter{a}', pol(6.45, a, Z0 + .35), .3, .7, M_POT, v=32)
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=.42, location=pol(6.45, a, Z0 + 1.05)); pl = bpy.context.active_object; pl.name = f'Plant{a}'; pl.scale = (1, 1, 1.3); pl.data.materials.append(M_LEAF)
-    d_ = pl.modifiers.new('D', 'DISPLACE'); d_.strength = .12; d_.texture = bpy.data.textures.get('LeafTex') or bpy.data.textures.new('LeafTex', 'CLOUDS')
-lk = bpy.data.lights.new('Skylight', 'AREA'); lk.size = 2.6; lk.energy = 2500; lk.color = (.85, .9, 1)
+    pass   # v12: placeholder ball plants removed
+lk = bpy.data.lights.new('Skylight', 'AREA'); lk.size = 2.6; lk.energy = 1400; lk.color = (.85, .9, 1)
 o = bpy.data.objects.new('Skylight', lk); col.objects.link(o); o.location = (HC.x, HC.y, ZD - .25)
-Area('HallFill', (HC.x, HC.y, ZS + .4), 5.0, 900, (1, .95, .88))
+Area('HallFill', (HC.x, HC.y, ZS + .4), 3.0, 220, (1, .95, .88))
+# ---- v12 accent: the reactor windows are the hall's one colour source (cyan, from the plasma behind the shield)
+M_WINGLOW = pbsdf('WinGlow', (.2, .8, 1), 0, .3, (.25, .85, 1), 30)
+for s in (-1, 1):
+    yc = s * (WY0_ + WY1_) / 2; ww = WY1_ - WY0_
+    Box(f'WinBackGlow{s}', (-12.75, yc, (WZ0 + WZ1) / 2), (.04, ww + .1, WZ1 - WZ0 + .1), M_WINGLOW)
+    for zz in (WZ0 - .05, WZ1 + .05): Box(f'WinFrameGlow{s}{zz:.1f}', (-9.72, yc, zz), (.04, ww + .2, .05), M_WINGLOW)
+    for yy in (WY0_ - .05, WY1_ + .05): Box(f'WinFrameGlowS{s}{yy:.1f}', (-9.72, s * yy, (WZ0 + WZ1) / 2), (.04, .05, WZ1 - WZ0 + .15), M_WINGLOW)
+    la = Area(f'WinSpill{s}', (-10.0, yc, (WZ0 + WZ1) / 2), 1.0, 320, (.3, .8, 1)); la.data.shape = 'RECTANGLE'; la.data.size = ww; la.data.size_y = WZ1 - WZ0
+    la.rotation_euler = (0, math.radians(-90), 0)   # faces +x, into the hall
+    Box(f'WinWallWash{s}', (-9.7, yc, Z0 + .01), (.5, ww, .012), M_WINGLOW)
+
+# ---- v12 wear: procedural grime + panel seams, decals and scuffs near doors
+def grime(m, scale, amt, rough_add=.15):
+    nt = m.node_tree; p = nt.nodes['Principled BSDF']; base = tuple(p.inputs['Base Color'].default_value)
+    nz = nt.nodes.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = scale; nz.inputs['Detail'].default_value = 8
+    cr = nt.nodes.new('ShaderNodeValToRGB'); cr.color_ramp.elements[0].position = .45; cr.color_ramp.elements[1].position = .75
+    nt.links.new(nz.outputs['Fac'], cr.inputs['Fac'])
+    mx = nt.nodes.new('ShaderNodeMix'); mx.data_type = 'RGBA'; mx.inputs[6].default_value = (base[0] * (1 - amt), base[1] * (1 - amt), base[2] * (1 - amt), 1); mx.inputs[7].default_value = base
+    nt.links.new(cr.outputs['Color'], mx.inputs[0]); nt.links.new(mx.outputs[2], p.inputs['Base Color'])
+    mr = nt.nodes.new('ShaderNodeMapRange'); mr.inputs[3].default_value = p.inputs['Roughness'].default_value + rough_add; mr.inputs[4].default_value = p.inputs['Roughness'].default_value
+    nt.links.new(cr.outputs['Color'], mr.inputs[0]); nt.links.new(mr.outputs[0], p.inputs['Roughness'])
+grime(M_HW, 3.0, .22); grime(M_HFL, 5.0, .35, .25)
+M_SEAM = pbsdf('PanelSeam', (.08, .08, .085), .3, .6); M_SCUFF = pbsdf('Scuff', (.012, .012, .013), 0, .85)
+M_DECW = pbsdf('DecalWhite', (.8, .8, .78), 0, .5); M_DECY = pbsdf('DecalYellow', (.75, .55, .05), 0, .5)
+for zz in (Z0 + 1.25, Z0 + 2.6): ann(f'WallSeamH{zz:.1f}', HR - .012, HR - .002, 0, 360, zz, zz + .012, M_SEAM, step=2)
+for k in range(32):
+    a = k * 11.25 + 5.6
+    if in_open(a, Z0 + 1.0) or in_open(a, ZG + 1.0): continue
+    pbox(f'WallSeamV{k}', HR - .008, a, (Z0 + ZS) / 2, (.01, .012, ZS - Z0), M_SEAM)
+for rr in (2.0, 5.2):
+    ring_inlay(f'FloorSeam{rr:.0f}', rr, .006, M_SEAM)
+for k in range(12):
+    a = k * 30 + 15; c0 = pol(1.0, a, 0)
+    if pit_hole(c0[0], c0[1]): continue
+    for j in range(8):
+        r_ = .5 + j * .8; c = pol(r_ + .4, a, 0)
+        if r_ + .8 > HR or pit_hole(c[0], c[1]): continue
+        pbox(f'FloorSeamR{k}_{j}', r_ + .4, a, Z0 + .003, (.8, .008, .004), M_SEAM)
+random.seed(11)
+for nm_, a_, zf_ in (('Mess', 90, Z0), ('Med', 270, Z0), ('Reactor', 180, Z0)):
+    for j in range(7):   # scuffs on the floor at the threshold (trolleys, boots)
+        rr = HR - random.uniform(.25, 1.3); aa = a_ + random.uniform(-7, 7)
+        pbox(f'ScuffF{nm_}{j}', rr, aa, zf_ + .004, (random.uniform(.15, .5), random.uniform(.04, .12), .003), M_SCUFF, tilt=0)
+    for e in (-1, 1):    # kick marks at the jambs + small decals
+        pbox(f'ScuffW{nm_}{e}', HR - .006, a_ + e * dang(1.05), zf_ + .2, (.01, .25, .3), M_SCUFF)
+        pbox(f'DecalPlate{nm_}{e}', HR - .008, a_ + e * dang(1.25), zf_ + 1.5, (.008, .16, .1), M_DECW)
+        pbox(f'DecalStripe{nm_}{e}', HR - .008, a_ + e * dang(1.25), zf_ + 1.42, (.008, .16, .02), M_DECY)
+for k in range(10):     # deck markings on the floor
+    a = random.uniform(0, 360); c = pol(3.0, a, 0)
+    if not pit_hole(c[0], c[1]): pbox(f'FloorArrow{k}', 3.0, a, Z0 + .004, (.25, .06, .002), M_DECY)
+
+# ---- v12 scale check: one 1.75 m mannequin on the hall floor, one on the gallery
+M_MAN = pbsdf('Mannequin', (.75, .32, .12), 0, .55)
+def mannequin(nm, x, y, z, h=1.75):
+    f = h / 1.75
+    for e in (-1, 1): Cyl(f'{nm}Leg{e}', (x, y + e * .1 * f, z + .43 * f), .07 * f, .86 * f, M_MAN, v=12)
+    soft(Box(f'{nm}Torso', (x, y, z + 1.17 * f), (.24 * f, .4 * f, .62 * f), M_MAN), 2)
+    for e in (-1, 1): Cyl(f'{nm}Arm{e}', (x, y + e * .25 * f, z + 1.12 * f), .05 * f, .62 * f, M_MAN, v=12)
+    Cyl(f'{nm}Neck', (x, y, z + 1.52 * f), .05 * f, .1 * f, M_MAN, v=12)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=.11 * f, location=(x, y, z + h - .11 * f)); hd = bpy.context.active_object; hd.name = f'{nm}Head'; hd.scale = (1, .85, 1.15); hd.data.materials.append(M_MAN)
+SCALE_MAN = pol(4.6, 225, Z0)
+mannequin('ManFloor', SCALE_MAN[0], SCALE_MAN[1], Z0); mg = pol(4.6, 110, ZG); mannequin('ManGallery', mg[0], mg[1], ZG)
+print('MODEL scale: figure 1.75 m; floor to dome crown', round(ZD - Z0, 2), 'm =', round((ZD - Z0) / 1.75, 1), 'figures; floor to gallery', round(ZG - Z0, 2), '; gallery to springline', round(ZS - ZG, 2), '; hall diameter', 2 * HR)
 dg_ = bpy.context.evaluated_depsgraph_get()
 for nm_, a_, zz_ in (('fwd_lane', 0, ZF + 1.2), ('mess', 90, Z0 + 1.2), ('med', 270, Z0 + 1.2), ('reactor', 180, Z0 + 1.2), ('gal_fwd', 0, ZG + 1.2)):
     o_ = Vector(pol(HR + .45, a_, zz_)); d_ = (o_ - Vector((HC.x, HC.y, zz_))).normalized()
@@ -1498,6 +1559,7 @@ if DRY:
     shot('h3_gallery', 120, pol(4.5, 300, ZG + 1.65), pol(5.5, 140, ZG + .4), 16)
     shot('h4_dome', 120, (HC.x - .6, -2.0, Z0 + 1.6), (HC.x, .3, ZD), 11)
     shot('h5_reactor_window', 120, (-7.6, 1.9, Z0 + 1.9), (EX, .9, zc_), 24)
+    shot('h0_scale', 120, pol(5.6, 40, Z0 + 1.2), (SCALE_MAN[0], SCALE_MAN[1], Z0 + 3.4), 14)
     shot('h8_lane', 120, (PIT[0] + .6, 0, ZF + 1.6), (HC.x + HR + 6, 0, ZF + 1.3), 16)
     shot('h9_shield_stairs', 120, (-8.4, -.3, Z0 + 1.6), (XSB - 1.5, 0, ZA + .9), 16)
     shot('h6_library', 120, pol(4.4, 40, ZG + 1.6), pol(6.5, 100, ZG + 1.0), 18)
