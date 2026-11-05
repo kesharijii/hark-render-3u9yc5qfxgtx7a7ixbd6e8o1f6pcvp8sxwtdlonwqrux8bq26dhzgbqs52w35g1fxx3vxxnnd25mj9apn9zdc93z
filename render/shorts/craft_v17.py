@@ -51,6 +51,31 @@ mw = np.array(hull.matrix_world); W = (np.c_[co, np.ones(nv)] @ mw.T)[:, :3]
 u_ = np.abs(W[:, 1]) / np.abs(W[:, 1]).max(); sm = np.clip((u_ - .22) / .5, 0, 1); sm = sm * sm * (3 - 2 * sm)
 W[:, 2] *= 1.25 * (1 + .8 * sm)
 loc_ = (np.c_[W, np.ones(nv)] @ np.linalg.inv(mw).T)[:, :3].astype(np.float32); me.vertices.foreach_set('co', loc_.ravel()); me.update()
+# v17: world-space wheel cut AFTER the z-thickening (v10's local-space cut missed the fused port wheel and two islands)
+def _wcut(P_):
+    x, y, z = P_[:, 0], np.abs(P_[:, 1]), P_[:, 2]
+    zx = (x > -17.6) & (x < -3.0)
+    return zx & (((y > 9.4) & (y < 13.0) & (z < -2.35)) | ((y >= 13.0) & (y < 13.6) & (z < -2.6)) | ((y >= 13.6) & (y < 14.7) & (z < -3.4)))
+_b = _bm.new(); _b.from_mesh(me); _b.verts.ensure_lookup_table()
+_cut = np.where(_wcut(W))[0]
+_bm.ops.delete(_b, geom=[_b.verts[i] for i in _cut], context='VERTS'); _b.verts.index_update(); _b.verts.ensure_lookup_table()
+_seen = set(); _isl = []
+for v0 in _b.verts:
+    if v0.index in _seen: continue
+    comp = [v0]; _seen.add(v0.index); st_ = [v0]
+    while st_:
+        v = st_.pop()
+        for e in v.link_edges:
+            o = e.other_vert(v)
+            if o.index not in _seen: _seen.add(o.index); comp.append(o); st_.append(o)
+    if len(comp) < 4000:
+        Pc = np.array([tuple(hull.matrix_world @ v.co) for v in comp])
+        inb = (Pc[:, 0].min() > -17.8) and (Pc[:, 0].max() < -2.8) and (np.abs(Pc[:, 1]).min() > 9.0) and (np.abs(Pc[:, 1]).max() < 15.0) and (Pc[:, 2].max() < -1.0)
+        if inb: _isl.extend(comp)
+_bm.ops.delete(_b, geom=_isl, context='VERTS'); _b.to_mesh(me); _b.free(); me.update()
+print('MODEL v17 wheel cut verts', len(_cut), 'islands verts', len(_isl))
+nv = len(me.vertices); co = np.empty(nv * 3, dtype=np.float32); me.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+W = (np.c_[co, np.ones(nv)] @ mw.T)[:, :3]
 print('MODEL hull verts', nv, 'bounds', W.min(0).round(2), W.max(0).round(2))
 # ------------------------------------------------------------------ v10 LIVERY: vertex-colour paint scheme (survives GLB export)
 def _ss(a, b, x): t = np.clip((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t)
@@ -73,8 +98,7 @@ col_[(Y_ > ymax_ - 2.6) & (Y_ <= ymax_ - 2.2)] = CHAR
 # scorched gunmetal toward the engines
 sc_ = _ss(xmin_ + 4, xmin_ + .5, X_)[:, None]; col_ = col_ * (1 - sc_ * .8) + GUN * sc_ * .8
 # hazard chevrons around the boarding ramp on the belly
-hz = (up < -.3) & (np.abs(X_) < 1.85 * K * G) & (Y_ > .88 * K * G) & (Y_ < 1.1 * K * G)
-col_[hz & ((np.floor((X_ + Y_) / .35) % 2) == 0)] = YEL; col_[hz & ((np.floor((X_ + Y_) / .35) % 2) == 1)] = CHAR
+# v17: belly hazard chevrons removed
 # panel lines (dark seams on a 2.4 m grid, offset per chord)
 gx = np.abs(((X_ + .3) / 2.4) % 1 - .5) > .485; gy = np.abs(((Y_ + .9) / 3.0) % 1 - .5) > .488
 col_[gx | gy] *= .55
@@ -160,10 +184,7 @@ for m in hull.data.materials:
     cut_ctl = cutv; ramp_ctl = rampv
 def set_cut(v):
     for m in hull.data.materials: m.node_tree.nodes['CUT'].outputs[0].default_value = v
-# ramp hole driven by the RAMP value keyframes
-for m in hull.data.materials:
-    s = m.node_tree.nodes['RAMP'].outputs[0]
-    s.default_value = 0; s.keyframe_insert('default_value', frame=40); s.default_value = 1; s.keyframe_insert('default_value', frame=41)
+# v17: ramp-hole keyframes removed (the keel bay is carved in geometry)
 
 # ------------------------------------------------------------------ geometry helpers (all coords in x32 frame -> P())
 def box(name, c, size, mat, rot=(0, 0, 0)):
@@ -1149,7 +1170,7 @@ def polar_grid(name, r0, r1, z_of_r, mat, skip=None, dr=.25, da=2.0):
 # ---------------------------------------------------------------- 3. openings in the round wall
 OPEN = []
 def opening(nm, a, half_w, z0, z1): OPEN.append((nm, a - dang(half_w), a + dang(half_w), z0, z1))
-OPEN.append(('Fwd', -dang(LANE[2]), dang(LANE[2]), Z0 - .01, ZF + 2.4))
+OPEN.append(('Fwd', -dang(LANE[2]), dang(LANE[2]), Z0 - .01, Z0 + 2.4))   # v17: full 2.4 m door at hall level
 for nm, a in (('Mess', 90), ('Med', 270)): opening(nm, a, .8, Z0, Z0 + 2.3)
 OPEN.append(('Reactor', 180 - math.degrees(math.asin(.75 / HR)), 180 + math.degrees(math.asin(.75 / HR)), Z0, Z0 + 2.4))
 WZ0, WZ1, WY0_, WY1_ = Z0 + 1.3, Z0 + 3.3, 1.3, 2.5
@@ -1208,7 +1229,7 @@ for k in range(16):
     sp = cu.splines.new('POLY'); sp.points.add(len(pts) - 1)
     for i, p in enumerate(pts): sp.points[i].co = (*p, 1)
     o = bpy.data.objects.new(f'HallRib{k}', cu); col.objects.link(o); cu.materials.append(M_HD)
-def pit_hole(x, y): return (PIT[0] < x < PIT[1] and abs(y) < PIT[2]) or (LANE[0] - .1 < x and abs(y) < LANE[2])
+def pit_hole(x, y): return (-7.2 < x < -4.6 and abs(y) < .65) or math.hypot(x - HC.x, y - HC.y) < .75   # v17: off-centre hatch + flush holo-table well
 fl = polar_grid('HallFloor', 0.0, HR, lambda r: Z0, M_HFL, skip=pit_hole)
 so = fl.modifiers.new('Sol', 'SOLIDIFY'); so.thickness = .2; so.offset = -1
 # floor inlays: cyan ring under the gallery edge, warm ring at the wall
@@ -1750,6 +1771,338 @@ for s_, m_, c_ in ((1, M_NAVR, (1, .1, .05)), (-1, M_NAVG, (.1, 1, .2))):   # po
     bpy.ops.mesh.primitive_uv_sphere_add(radius=.12, location=tip[s_] + Vector((0, 0, .1))); o = bpy.context.active_object; o.name = f'NavLight{s_}'; o.data.materials.append(m_)
     ld = bpy.data.lights.new(f'NavL{s_}', 'POINT'); ld.energy = 60; ld.color = c_; lo = bpy.data.objects.new(f'NavL{s_}', ld); col.objects.link(lo); lo.location = tip[s_] + Vector((0, 0, .4))
 print('MODEL v16 exterior details', placed, 'tips', tip)
+# ================================================================== v17 PASS: clean hull, crew deck at hall level, keel entrance bay
+print('MODEL v17 pass start')
+from mathutils.bvhtree import BVHTree as _BVH
+def _rm(o):
+    try: bpy.data.objects.remove(o, do_unlink=True)
+    except Exception as e: print('Error rm', e)
+# ---- A1. drop the script's own landing gear / nose strut, old stepped ramp + rails + pivot, hall pit + lane, hazard stripes, h5 back glow
+V17_DEL = ('GearPiv', 'Gear0_', 'Gear1_', 'Gear2_', 'G0', 'G1', 'G2', 'GearDoor', 'Anim_GearDoor', 'Ramp', 'PitStep', 'PitNose', 'PitEnd', 'PitRail',
+           'LaneWall', 'LaneRail', 'LaneStrip', 'LaneFloor', 'LaneLintel', 'FwdJamb', 'ReactorHaz', 'WinBackGlow', 'HatchEdge', 'Bench')
+_nd = 0
+for o in list(bpy.data.objects):
+    if o.name.startswith(V17_DEL): _rm(o); _nd += 1
+for o in bpy.data.objects:
+    if o.type == 'MESH':
+        for i, m in enumerate(o.data.materials):
+            if m == M_HAZ: o.data.materials[i] = M_HD
+print('MODEL v17 removed gear/ramp/pit/haz/bench objects', _nd)
+dg = bpy.context.evaluated_depsgraph_get()
+def bvh_of(names):
+    V = []; F = []
+    for nm in names:
+        o = bpy.data.objects.get(nm)
+        if not o or o.type != 'MESH': continue
+        oe = o.evaluated_get(dg); me_ = oe.to_mesh(); M = o.matrix_world; b = len(V)
+        n_ = len(me_.vertices); c_ = np.empty(n_ * 3, np.float32); me_.vertices.foreach_get('co', c_); c_ = c_.reshape(-1, 3)
+        Mw = np.array(M); c_ = c_ @ Mw[:3, :3].T + Mw[:3, 3]
+        V += [tuple(v) for v in c_.tolist()]; F += [tuple(b + i for i in p.vertices) for p in me_.polygons]
+        oe.to_mesh_clear()
+    return _BVH.FromPolygons(V, F)
+HB = bvh_of(['Hull'])
+def hdist(p, d, far=20.0):
+    h = HB.ray_cast(Vector(p), Vector(d).normalized(), far); return h[3] if h[0] is not None else None
+def arc_x(y, r=HR): return HC.x + math.sqrt(max(r * r - y * y, 0.0))
+def rr_(P_): return np.hypot(P_[:, 0] - HC.x, P_[:, 1] - HC.y)
+
+# ---- A2. crew block outline from the hull (ray cast at floor, waist, head and ceiling height), inset 0.23 m
+CX0, CX1, CXB = 2.2, 12.15, 12.45
+CXS = np.arange(CX0, CX1 + .001, .25)
+def hw_at(x):
+    ws = []
+    for z in (Z0 - .22, Z0 + .3, Z0 + 1.2, Z0 + 2.46):
+        for s in (1, -1):
+            d = hdist((x, 0, z), (0, s, 0)); ws.append(d if d else 6.0)
+    return min(ws)
+CHW = np.array([min(4.6, hw_at(float(x)) - .23) for x in CXS])
+print('MODEL v17 crew half-width', np.round(CXS[::4], 2).tolist(), np.round(CHW[::4], 2).tolist())
+def chw(x): return float(np.interp(x, CXS, CHW))
+# clear everything old inside the crew block volume (old ZF deck, v3 rooms, lining, partitions, lights), keep the hall and the exterior
+def t_crew(P_):
+    x, y, z = P_[:, 0], np.abs(P_[:, 1]), P_[:, 2]
+    return (rr_(P_) > HR + .45) & (x < CXB) & (y < np.interp(x, CXS, CHW) + .15) & (z > -2.45) & (z < 3.6) & ~((x > CX1 + .05) & (z < ZB + .05))
+KEEP_PFX = ('Hull', 'Hall', 'X', 'Nav', 'Strobe', 'Thruster', 'Exhaust', 'Plume', 'Winglet', 'Strake', 'Skylight', 'Dome')
+_nc = 0
+for o in list(bpy.data.objects):
+    if o.name.startswith(KEEP_PFX): continue
+    if o.type == 'MESH':
+        try: _nc += carve_faces(o, t_crew)
+        except Exception as e: print('Error crewcarve', o.name, e)
+    elif o.type in ('LIGHT', 'CURVE'):
+        if t_crew(np.array([list(o.matrix_world.translation)]))[0]: _rm(o); _nc += 1
+print('MODEL v17 crew volume cleared faces/objs', _nc)
+# floor: one continuous plate at hall level (Z0), aft edge on the hall circle, sides inset from the hull
+def strip_mesh(name, z, mat, th, off=-1, nv_=24, x0=None):
+    V = []; F = []; xs_ = [x for x in CXS if x0 is None or x >= x0]
+    for x in xs_:
+        h_ = chw(x)
+        for j in range(nv_ + 1):
+            y = (j / nv_ * 2 - 1) * h_; V.append((max(float(x), arc_x(y) - .02), y, z))
+    for i in range(len(xs_) - 1):
+        for j in range(nv_):
+            a = i * (nv_ + 1) + j; F.append((a, a + nv_ + 1, a + nv_ + 2, a + 1))
+    o = mk(name, V, F, mat); s_ = o.modifiers.new('S', 'SOLIDIFY'); s_.thickness = th; s_.offset = off; return o
+strip_mesh('CrewFloor', Z0, M_HFL, .2)
+CZC = Z0 + 2.4                                   # cabin / corridor ceiling (below 2.4 m clear), storage loft above
+cl = strip_mesh('CrewCeiling', CZC + .06, M_CEILP, .06)
+try: CEIL.append(cl)
+except Exception: pass
+for k, x in enumerate(np.arange(5.0, 12.0, 1.4)): Box(f'CrewFloorSeam{k}', (x, 0, Z0 + .003), (.01, 2 * chw(x) - .2, .004), M_SEAM)
+CW = .85                                         # corridor half width
+RA = 7.56                                        # curved aft wall radius about the hall centre
+# outer walls follow the hull outline (0.1 m)
+for s in (1, -1):
+    xs_ = [x for x in CXS if x >= arc_x(chw(x), RA) - .05]
+    V = []; F = []
+    for x in xs_: V += [(float(x), s * chw(x), Z0), (float(x), s * chw(x), CZC)]
+    for i in range(len(xs_) - 1):
+        a = 2 * i; F.append((a, a + 2, a + 3, a + 1) if s > 0 else (a, a + 1, a + 3, a + 2))
+    o = mk(f'CrewOuterWall{s}', V, F, M_HW); so_ = o.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .1; so_.offset = 0
+# curved aft wall (joins the round hall) + flared vestibule fairings
+a_d = math.degrees(math.asin(1.0 / RA))
+for s in (1, -1):
+    a_m = a_d
+    while a_m < 80:
+        p_ = pol(RA, a_m + .5, 0)
+        if abs(p_[1]) > chw(p_[0]) - .02: break
+        a_m += .5
+    lo_, hi_ = (a_d, a_m) if s > 0 else (-a_m, -a_d)
+    ann(f'CrewAftWall{s}', RA - .05, RA + .05, lo_, hi_, Z0, CZC, M_HW, step=1.5)
+    ann(f'CrewFairing{s}', HR + .38, RA + .05, lo_, hi_, CZC, CZC + .5, M_HD, step=1.5)        # curved cornice where the block meets the blister
+    # vestibule: flared jambs from the hall door (|y| 1.0) to the corridor (|y| CW)
+    xa, xb = arc_x(1.0, HR), arc_x(1.0, RA) + .5
+    L_ = math.hypot(xb - xa, 1.0 - CW); ang = math.degrees(math.atan2(-(1.0 - CW), xb - xa)) * s
+    Box(f'CrewVestibule{s}', ((xa + xb) / 2, s * (1.0 + CW) / 2 + s * .06, Z0 + CZC / 2 - Z0 / 2), (L_, .1, CZC - Z0), M_HD, rot=(0, 0, ang))
+    Box(f'CrewVestibuleLight{s}', ((xa + xb) / 2, s * (1.0 + CW) / 2, Z0 + .06), (L_, .02, .02), M_CYAN, rot=(0, 0, ang))
+ann('CrewVestibuleHead', HR - .02, RA + .05, -a_d, a_d, CZC, CZC + .5, M_HD, step=1.0)
+# corridor walls with cabin doors, partitions at x 8.3, forward bulkhead with the bridge door
+XP = 8.3; XV = arc_x(1.0, RA) + .5
+CAB = []
+for s in (1, -1):
+    for (x0, x1) in ((XV, XP - .06), (XP + .06, CX1 - .05)):
+        dc = (x0 + x1) / 2                                  # door at the middle of the cabin
+        for (a_, b_) in ((x0 - .06, dc - .45), (dc + .45, x1 + .06)):
+            if b_ - a_ > .02: Box(f'CrewCorrWall{s}_{a_:.1f}', ((a_ + b_) / 2, s * (CW + .05), (Z0 + CZC) / 2), (b_ - a_, .1, CZC - Z0), M_HW)
+        Box(f'CrewDoorHead{s}_{dc:.1f}', (dc, s * (CW + .05), (Z0 + 2.1 + CZC) / 2), (.9, .1, CZC - Z0 - 2.1), M_HW)
+        Box(f'CrewDoorFrame{s}_{dc:.1f}', (dc, s * (CW + .0), Z0 + 2.12), (.96, .03, .04), M_CYAN)
+        Box(f'CrewDoorLeaf{s}_{dc:.1f}', (dc + .62, s * (CW + .12), Z0 + 1.05), (.9, .04, 2.08), M_HD)   # slid open behind the wall
+        CAB.append((s, x0, x1, dc))
+    yo = chw(XP)
+    Box(f'CrewPartition{s}', (XP, s * (CW + .1 + yo) / 2, (Z0 + CZC) / 2), (.1, yo - CW - .1, CZC - Z0), M_HW)
+    yf = chw(CX1)
+    Box(f'CrewFwdWall{s}', (CX1, s * (CW + yf) / 2, (Z0 + CZC) / 2), (.1, yf - CW, CZC - Z0), M_HW)
+Box('CrewFwdHead', (CX1, 0, (Z0 + 2.3 + CZC) / 2), (.1, 2 * CW + .1, CZC - Z0 - 2.3), M_HW)
+# steps down to the bridge deck
+NBS = max(1, int(round((Z0 - ZB) / .2))); rs_ = (Z0 - ZB) / NBS
+for k in range(NBS):
+    zt = Z0 - (k + 1) * rs_; x0 = CX1 + .05 + k * .28
+    Box(f'BridgeStep{k}', (x0 + .14, 0, (zt + ZB - .05) / 2), (.28, 2 * CW - .1, zt - ZB + .05), M_HFL)
+    Box(f'BridgeStepNose{k}', (x0 + .02, 0, zt + .004), (.03, 2 * CW - .2, .008), M_AMBER)
+# cabins: bed, mattress, pillow, desk, locker, screen, light (each under the 2.4 m ceiling)
+for k, (s, x0, x1, dc) in enumerate(CAB):
+    yo = min(chw(x0 + .3), chw(x1 - .3)) - .05; nm = f'Cabin{k}'
+    bx = x1 - 1.1 if dc < (x0 + x1) / 2 else x0 + 1.1
+    Box(f'{nm}Bed', (bx, s * (yo - .5), Z0 + .2), (2.0, .95, .4), M_CAB)
+    Box(f'{nm}Mattress', (bx, s * (yo - .5), Z0 + .48), (1.94, .9, .16), M_MATT)
+    Box(f'{nm}Pillow', (bx + (.75 if bx > (x0 + x1) / 2 else -.75), s * (yo - .5), Z0 + .61), (.35, .6, .1), M_LINEN)
+    Box(f'{nm}Blanket', (bx - (.25 if bx > (x0 + x1) / 2 else -.25), s * (yo - .5), Z0 + .57), (1.3, .92, .04), M_BLANK)
+    Box(f'{nm}Screen', (bx, s * (yo - .04), Z0 + 1.45), (1.0, .02, .56), M_VIEW)
+    dx = x0 + .5 if bx > (x0 + x1) / 2 else x1 - .5
+    Box(f'{nm}Desk', (dx, s * (yo - .32), Z0 + .74), (.8, .6, .04), M_WOOD)
+    Box(f'{nm}DeskLeg', (dx, s * (yo - .1), Z0 + .37), (.7, .04, .74), M_STEEL)
+    Box(f'{nm}Locker', (dx, s * (CW + .45), Z0 + 1.0), (.75, .55, 2.0), M_CAB)
+    Box(f'{nm}LockerSeam', (dx, s * (CW + .17), Z0 + 1.0), (.01, .01, 1.9), M_SEAM)
+    Area(f'{nm}Light', ((x0 + x1) / 2, s * (CW + yo) / 2, CZC - .08), 1.0, 45, (1, .9, .78))
+for k, x in enumerate((5.6, 8.3, 11.0)): Area(f'CrewCorrL{k}', (x, 0, CZC - .08), .8, 55, (.85, .92, 1))
+for s in (1, -1): Box(f'CrewCorrStrip{s}', ((XV + CX1) / 2, s * (CW - .02), Z0 + .05), (CX1 - XV, .02, .02), M_CYAN)
+# storage loft above the cabins: open racks (posts, shelves, crates) under the hull roof, ladder + hatch from the corridor
+_nr = 0
+for s in (1, -1):
+    for yr in (1.5, 2.9):
+        for x in np.arange(5.4, 11.6, 1.35):
+            if yr + .35 > chw(x): continue
+            up_ = hdist((x, s * yr, CZC + .1), (0, 0, 1)); h = min(1.5, (up_ or 0) - .2)
+            if h < .7: continue
+            zb_ = CZC + .06; nm = f'LoftRack{s}_{yr}_{x:.1f}'
+            for dx_ in (-.55, .55):
+                for dy_ in (-.25, .25): Box(f'{nm}Post{dx_}{dy_}', (x + dx_, s * yr + dy_, zb_ + h / 2), (.04, .04, h), M_STEEL)
+            for zz in (zb_ + .08, zb_ + h * .55):
+                Box(f'{nm}Shelf{zz:.2f}', (x, s * yr, zz), (1.14, .54, .03), M_STEEL)
+                Box(f'{nm}Crate{zz:.2f}', (x - .2, s * yr, zz + .17), (.5, .42, .32), M_CRATE)
+            _nr += 1
+Box('LoftLadderL', (11.5, .55, (Z0 + CZC) / 2 + .1), (.04, .04, CZC - Z0 + .2), M_STEEL); Box('LoftLadderR', (11.5, .25, (Z0 + CZC) / 2 + .1), (.04, .04, CZC - Z0 + .2), M_STEEL)
+for k in range(8): Box(f'LoftLadderRung{k}', (11.5, .4, Z0 + .3 + k * .28), (.03, .3, .03), M_STEEL)
+Box('LoftHatchFrame', (11.5, .4, CZC + .07), (.75, .7, .03), M_AMBER)
+print('MODEL v17 crew block: cabins', len(CAB), 'loft racks', _nr)
+
+# ---- B1. keel entrance bay: faired bulge under the hall (superellipse n=4), floor -4.2, open centre, racks, storage, ramp, stair
+KR, KT, KB, KF = 7.05, -1.25, -4.55, -4.2
+KD = KT - KB
+RAMP_X0, RAMP_L, RAMP_A = -1.5, 2.9, 27.0
+def ramp_hole(x, y): return RAMP_X0 - .02 < x < RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .08 and abs(y) < .95
+def t_keel(P_): return (rr_(P_) < KR - .05) & (P_[:, 2] < Z0 - .25) & (P_[:, 2] > KB - .3)
+_nk = carve_faces(hull, lambda P_: (rr_(P_) < KR - .03) & (P_[:, 2] < KT - .05) & (P_[:, 2] > KB - .5))
+for o in list(bpy.data.objects):
+    if o.name.startswith(('Hull', 'Skylight', 'Dome')) or o == hull: continue
+    if o.name.startswith('X'):
+        if t_keel(np.array([list(o.matrix_world.translation)]))[0] or (rr_(np.array([list(o.matrix_world.translation)]))[0] < KR + .1 and o.matrix_world.translation.z < KT): _rm(o)
+        continue
+    if o.type == 'MESH':
+        try: _nk += carve_faces(o, t_keel)
+        except Exception as e: print('Error keelcarve', o.name, e)
+print('MODEL v17 keel volume carved', _nk)
+prof_k = [(KR * math.cos(t) ** .5, KT - KD * math.sin(t) ** .5) for t in np.linspace(0, math.pi / 2, 16)]
+NA_ = 96; V = []; F = []
+for j in range(NA_):
+    a = 360 * j / NA_
+    for (r_, z_) in prof_k: V.append(pol(r_, a, z_))
+npk = len(prof_k)
+for j in range(NA_):
+    for i in range(npk - 1):
+        a_, b_ = j * npk + i, ((j + 1) % NA_) * npk + i
+        c_ = [(V[a_][0] + V[b_ + 1][0]) / 2, (V[a_][1] + V[b_ + 1][1]) / 2]
+        if ramp_hole(c_[0], c_[1]) and V[a_][2] < KF - .05: continue
+        F.append((a_, a_ + 1, b_ + 1, b_))
+ks = mk('KeelShell', V, F, M_CHR, smooth=True); so_ = ks.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = 1
+Tor('KeelShellBand', (HC.x, HC.y, KT - .25), KR - .02, .04, M_ORNG, ms=96, ns=6)
+fk = polar_grid('KeelFloor', 0.0, 5.4, lambda r: KF, M_HFL, skip=ramp_hole, dr=.3, da=3.0)
+so_ = fk.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .15; so_.offset = -1
+for k, x in enumerate((RAMP_X0, RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .06)): Box(f'RampWellEdge{k}', (x, 0, KF + .005), (.05, 1.9, .01), M_AMBER)
+# ramp: hinged at the bay floor, 2.9 m at 27 deg, lands on the ground at -5.5
+hx = RAMP_X0; ca_, sa_ = math.cos(math.radians(RAMP_A)), math.sin(math.radians(RAMP_A))
+Box('BellyRamp', (hx + ca_ * RAMP_L / 2, 0, KF - .05 - sa_ * RAMP_L / 2), (RAMP_L, 1.8, .1), M_HFL, rot=(0, RAMP_A, 0))
+for k in range(9): Box(f'BellyRampTread{k}', (hx + ca_ * (.25 + k * .3), 0, KF + .005 - sa_ * (.25 + k * .3)), (.05, 1.6, .02), M_HD, rot=(0, RAMP_A, 0))
+for s in (1, -1):
+    Box(f'BellyRampRail{s}', (hx + ca_ * RAMP_L / 2, s * .86, KF + .1 - sa_ * RAMP_L / 2), (RAMP_L, .05, .22), M_STEEL, rot=(0, RAMP_A, 0))
+    Box(f'BellyRampLight{s}', (hx + ca_ * RAMP_L / 2, s * .8, KF + .02 - sa_ * RAMP_L / 2), (RAMP_L - .1, .02, .02), M_CYAN, rot=(0, RAMP_A, 0))
+    Cyl(f'BellyRampPiston{s}', (hx + .5, s * .95, KF - .35), .05, 1.0, M_STEEL, rot=(0, 90 - 35, 0), v=12)
+print('MODEL v17 ramp lower end z', round(KF - sa_ * RAMP_L, 2))
+# straight stair up to the off-centre hatch (16 risers, 0.2 m)
+HX0, HX1, HHW = -7.2, -4.6, .65
+SX0_ = -8.2; NSR = 16; srise = (Z0 - KF) / NSR; srun = (HX1 - SX0_) / NSR
+for k in range(NSR):
+    zt = KF + (k + 1) * srise; x0 = SX0_ + k * srun
+    Box(f'KeelStairTread{k:02d}', (x0 + srun / 2, 0, zt - .025), (srun + .02, 1.1, .05), M_HFL)
+    Box(f'KeelStairNose{k:02d}', (x0 + .02, 0, zt + .003), (.03, 1.0, .006), M_CYAN)
+sl = math.hypot(HX1 - SX0_, Z0 - KF); sang = math.degrees(math.atan2(Z0 - KF, HX1 - SX0_))
+for s in (1, -1):
+    Box(f'KeelStairStringer{s}', ((SX0_ + HX1) / 2, s * .58, (KF + Z0) / 2 - .1), (sl, .05, .3), M_STEEL, rot=(0, -sang, 0))
+    Box(f'KeelStairRail{s}', ((SX0_ + HX1) / 2, s * .6, (KF + Z0) / 2 + .85), (sl, .04, .04), M_HD, rot=(0, -sang, 0))
+    for k in range(5):
+        xx = SX0_ + .3 + k * (HX1 - SX0_ - .6) / 4; zz = KF + (xx - SX0_) / (HX1 - SX0_) * (Z0 - KF)
+        Box(f'KeelStairPost{s}{k}', (xx, s * .6, zz + .45), (.03, .03, .9), M_STEEL)
+# two-leaf armoured sliding hatch (leaves slide sideways into the floor slab: closed 1-150, open 175+), emblem, glowing seam
+for s in (1, -1):
+    h = piv(f'Anim_HatchLeaf{s}', ((HX0 + HX1) / 2, s * HHW / 2, Z0 - .05))
+    att(Box(f'HatchLeaf{s}', ((HX0 + HX1) / 2, s * HHW / 2, Z0 - .05), (HX1 - HX0 - .02, HHW - .01, .09), M_STEEL), h)
+    for k in range(4): att(Box(f'HatchArmour{s}{k}', (HX0 + .35 + k * .63, s * HHW / 2, Z0 - .003), (.08, HHW - .12, .012), M_HD), h)
+    att(Box(f'HatchSeam{s}', ((HX0 + HX1) / 2, s * .012, Z0 - .004), (HX1 - HX0 - .06, .02, .01), M_CYAN), h)
+    att(Cyl(f'HatchEmblem{s}', ((HX0 + HX1) / 2, s * .2, Z0 - .002), .17, .01, M_GOLD, v=32), h)
+    h.location.y = s * HHW / 2; h.keyframe_insert('location', frame=150); h.location.y = s * (HHW / 2 + HHW); h.keyframe_insert('location', frame=175)
+for (x_, sy_) in ((HX0, None), (HX1, None)): Box(f'HatchFrameX{x_}', (x_, 0, Z0 + .003), (.06, 2 * HHW + .1, .008), M_AMBER)
+for s in (1, -1): Box(f'HatchFrameY{s}', ((HX0 + HX1) / 2, s * (HHW + .02), Z0 + .003), (HX1 - HX0, .04, .008), M_AMBER)
+for s in (1, -1): Box(f'HatchWell{s}', ((HX0 + HX1) / 2, s * (HHW + .02), Z0 - .3), (HX1 - HX0, .04, .6), M_HD)
+# artillery racks + loader (port side), storage (starboard), lights, lift pillar under the holo table
+M_MSL = pbsdf('Ordnance', (.55, .57, .6), .7, .3)
+for k, a in enumerate((60, 80, 100, 120)):
+    c_ = pol(4.95, a, 0); t_ = (-math.sin(math.radians(a)), math.cos(math.radians(a)))
+    for e in (-1, 1):
+        q_ = (c_[0] + t_[0] * e * .9, c_[1] + t_[1] * e * .9)
+        Box(f'ArtRackUpright{k}{e}', (q_[0], q_[1], KF + 1.0), (.12, .12, 2.0), M_STEEL, rot=(0, 0, a))
+    for j in range(3):
+        zz = KF + .45 + j * .6
+        Box(f'ArtRackArm{k}{j}', (c_[0], c_[1], zz - .2), (.5, 1.9, .06), M_HD, rot=(0, 0, a))
+        Cyl(f'ArtShell{k}{j}', (c_[0], c_[1], zz), .17, 2.0, M_MSL, rot=(90, 0, a), v=20)
+        for e in (-1, 1):
+            q_ = (c_[0] + t_[0] * e * 1.05, c_[1] + t_[1] * e * 1.05)
+            if e > 0: bpy.ops.mesh.primitive_cone_add(vertices=20, radius1=.17, depth=.35, location=(q_[0], q_[1], zz), rotation=(math.radians(-90), 0, math.radians(a))); o = bpy.context.active_object; o.name = f'ArtShellTip{k}{j}'; o.data.materials.append(M_ORNG)
+    Box(f'ArtRackLabel{k}', (pol(4.62, a, 0)[0], pol(4.62, a, 0)[1], KF + 2.05), (.02, .6, .12), M_SCR2, rot=(0, 0, a))
+# overhead loader: curved rail at r 4.2 + gantry trolley with a claw and a cradle cart on the floor
+ann('LoaderRail', 4.15, 4.3, 50, 130, -1.62, -1.5, M_STEEL, step=2)
+lc = pol(4.22, 90, 0)
+Box('LoaderTrolley', (lc[0], lc[1], -1.7), (.5, .4, .2), M_HD); Cyl('LoaderMast', (lc[0], lc[1], -2.35), .05, 1.1, M_STEEL, v=12)
+Box('LoaderClaw', (lc[0], lc[1], -2.95), (.25, .6, .12), M_ORNG)
+cc = pol(3.4, 92, 0)
+Box('LoaderCart', (cc[0], cc[1], KF + .35), (.9, 1.4, .1), M_STEEL); Cyl('LoaderCartShell', (cc[0], cc[1], KF + .6), .17, 2.0, M_MSL, rot=(90, 0, 0), v=20)
+for e in (-1, 1):
+    for f_ in (-1, 1): Cyl(f'LoaderCartWheel{e}{f_}', (cc[0] + e * .35, cc[1] + f_ * .55, KF + .12), .12, .08, M_HD, rot=(0, 90, 0), v=16)
+for k, a in enumerate(range(236, 306, 9)):
+    Box(f'BayLocker{k}', pol(5.05, a, KF + 1.0), (.55, .62, 2.0), M_CAB, rot=(0, 0, a))
+    Box(f'BayLockerSeam{k}', pol(4.77, a, KF + 1.0), (.01, .01, 1.9), M_SEAM, rot=(0, 0, a))
+for k, (a, n) in enumerate(((210, 3), (222, 2), (314, 3), (326, 1))):
+    for j in range(n): Box(f'BayCrate{k}{j}', pol(4.6, a, KF + .3 + j * .6), (.6, .6, .6), M_CRATE, rot=(0, 0, a + 7 * j))
+Cyl('HoloLiftShaft', (HC.x, HC.y, (KF - Z0) / 2 + Z0 - .1), .8, Z0 - KF - .2, M_HD, v=48)
+Tor('HoloLiftRing', (HC.x, HC.y, KF + .05), .82, .03, M_CYAN, ms=48, ns=6)
+for k, (r_, a) in enumerate(((2.5, 90), (2.5, 270), (2.5, 0), (2.5, 180), (4.3, 45), (4.3, 315))): Area(f'BayLight{k}', pol(r_, a, -1.5), 1.0, 70, (.85, .92, 1))
+Area('RampLight', (RAMP_X0 + 1.0, 0, -1.6), 1.2, 90, (1, .85, .65))
+
+# ---- B2. hall: holo table flush in the centre (raised copy hidden), curved sofas along the edge
+def holo_table(nm, dz):
+    parts = [Cyl(f'{nm}Body', (HC.x, HC.y, Z0 - .45 + dz), .73, .9, M_HD, v=48),
+             Cyl(f'{nm}Top', (HC.x, HC.y, Z0 - .01 + dz), .7, .02, M_HOLO, v=48),
+             Tor(f'{nm}Rim', (HC.x, HC.y, Z0 + dz), .72, .025, M_CYAN, ms=48, ns=6)]
+    return parts
+for o in holo_table('HoloTable', 0.0): pass
+RAISED = holo_table('HoloTable_raised', .95)
+gl_ = bpy.ops.mesh.primitive_uv_sphere_add(radius=.38, location=(HC.x, HC.y, Z0 + .95 + .55)); hgl = bpy.context.active_object; hgl.name = 'HoloTable_raisedGlobe'
+hgl.data.materials.append(M_HOLO); w_ = hgl.modifiers.new('W', 'WIREFRAME'); w_.thickness = .006; RAISED.append(hgl)
+for o in RAISED: o.hide_render = True
+for k, (a0, a1) in enumerate(((108, 150), (210, 252), (64, 82), (278, 296))):
+    ann(f'SofaBase{k}', 6.2, 6.9, a0, a1, Z0, Z0 + .3, M_HD, step=2)
+    ann(f'SofaSeat{k}', 6.2, 6.85, a0 + .3, a1 - .3, Z0 + .3, Z0 + .46, M_FAB, step=2)
+    ann(f'SofaBack{k}', 6.7, 6.92, a0 + .3, a1 - .3, Z0 + .46, Z0 + 1.0, M_FAB, step=2)
+    for a in (a0, a1): ann(f'SofaArm{k}_{a}', 6.2, 6.92, a - .8 if a == a0 else a, a if a == a0 else a + .8, Z0, Z0 + .62, M_HD, step=.8)
+
+# ---- A3. exterior X* plates follow the hull (parented)
+_npl = 0
+for o in bpy.data.objects:
+    if o.name.startswith(('XPlate', 'XVent', 'XHatch', 'XSide')):
+        mw0 = o.matrix_world.copy(); o.parent = hull; o.matrix_parent_inverse = hull.matrix_world.inverted(); o.matrix_world = mw0; _npl += 1
+print('MODEL v17 X plates parented to Hull', _npl)
+
+# ---- A4. outside-hull check: interior objects (centre inside the shell) must not poke through hull / blister / keel / sponsons
+SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelShell', 'SkylightGlass'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
+bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
+SB = bvh_of(SHELL)
+DIRS = [Vector(d) for d in ((0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))]
+def outside_pts(P_):
+    out = np.zeros(len(P_), bool)
+    for i, p in enumerate(P_):
+        miss = 0
+        for d in DIRS:
+            if SB.ray_cast(Vector(p), d, 40.0)[0] is None: miss += 1
+        out[i] = miss >= 2
+    return out
+EXT_PFX = ('Hull', 'X', 'Nav', 'Strobe', 'Thruster', 'Exhaust', 'Plume', 'Winglet', 'Strake', 'Keel', 'BellyRamp', 'Pad', 'Skylight', 'HoloTable_raised', 'NozL')
+_off = []; _fix = 0
+for o in list(bpy.data.objects):
+    if o.type != 'MESH' or o.name.startswith(EXT_PFX) or o.name in SHELL or o.name.endswith(('Sponson', 'SponsonCut', 'SponsonWinCut', 'SponsonStripe')): continue
+    try:
+        me_ = o.data; n_ = len(me_.vertices)
+        if n_ == 0: continue
+        c_ = np.empty(n_ * 3, np.float32); me_.vertices.foreach_get('co', c_); c_ = c_.reshape(-1, 3)
+        Mw = np.array(o.matrix_world); P_ = c_ @ Mw[:3, :3].T + Mw[:3, 3]
+        cen = P_.mean(0)
+        if outside_pts([cen])[0]: continue                      # exterior part
+        sub = P_[:: max(1, n_ // 120)]
+        out = outside_pts(sub)
+        if not out.any(): continue
+        dim = (P_.max(0) - P_.min(0)).max()
+        if dim < 1.5 and out.mean() <= .5:
+            moved = False
+            for step in range(1, 9):
+                dy = -math.copysign(.05 * step, cen[1]) if abs(cen[1]) > .3 else 0.0
+                dz = .05 * step if (sub[out][:, 2].mean() < cen[2]) else -.05 * step
+                if not outside_pts(sub + np.array([0, dy, dz * (0 if dy else 1)])).any():
+                    o.location.y += dy; o.location.z += dz * (0 if dy else 1); moved = True; break
+            if moved: _fix += 1; continue
+        _off.append((o.name, round(float(out.mean()), 2), round(float(dim), 2)))
+    except Exception as e: print('Error hullcheck', o.name, e)
+print('MODEL v17 outside-hull: auto-inset', _fix, 'offenders', len(_off))
+for t in sorted(_off, key=lambda t: -t[1])[:60]: print('MODEL v17 OFFENDER', t)
+print('MODEL v17 pass done')
+
 # ------------------------------------------------------------------ world, camera, render
 w = bpy.data.worlds.new('W'); sc.world = w; w.use_nodes = True; nt = w.node_tree; bg = nt.nodes['Background']
 if os.path.exists(hdr):
@@ -1757,7 +2110,7 @@ if os.path.exists(hdr):
 bg.inputs['Strength'].default_value = .9
 sun = bpy.data.objects.new('Sun', bpy.data.lights.new('Sun', 'SUN')); col.objects.link(sun); sun.data.energy = 3; sun.data.color = (1, .87, .72)
 sun.rotation_euler = (math.radians(50), 0, math.radians(135))
-gp = bpy.ops.mesh.primitive_plane_add(size=400, location=(0, 0, float(W[:, 2].min()) - 2.1)); ground = bpy.context.active_object; ground.name = 'Pad'
+gp = bpy.ops.mesh.primitive_plane_add(size=400, location=(0, 0, -5.5))   # v17: ground at -5.5 (ramp foot); ground = bpy.context.active_object; ground.name = 'Pad'
 gm = pbsdf('Pad', (.1, .1, .11), .2, .6); ground.data.materials.append(gm)
 cam = bpy.data.objects.new('Cam', bpy.data.cameras.new('Cam')); col.objects.link(cam); sc.camera = cam
 r = sc.render; r.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = SPP; sc.cycles.use_denoising = True
@@ -1803,6 +2156,8 @@ def export_glbs():
     if curves:
         bpy.context.view_layer.objects.active = curves[0]; bpy.ops.object.convert(target='MESH')
     lite = hull.copy(); lite.data = hull.data.copy(); lite.name = 'HullLite'; col.objects.link(lite)
+    for o in [o for o in bpy.data.objects if o.parent == hull]:   # v17: exterior plates ride on the exported hull
+        mw0 = o.matrix_world.copy(); o.parent = lite; o.matrix_parent_inverse = lite.matrix_world.inverted(); o.matrix_world = mw0
     dm = lite.modifiers.new('D', 'DECIMATE'); dm.ratio = .2
     for i, m in enumerate(lite.data.materials):
         m2 = m.copy(); nt = m2.node_tree; p = [n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED'][0]; o_ = [n for n in nt.nodes if n.type == 'OUTPUT_MATERIAL'][0]
@@ -1812,12 +2167,11 @@ def export_glbs():
     inner = [o for o in bpy.data.objects if o.type == 'MESH' and o.name not in hide and o.name != 'HullLite' and not o.name.startswith(('Thruster', 'Exhaust', 'Plume', 'g', 'RCS', 'Dish', 'Nav', 'Strobe', 'Gear', 'G0', 'G1', 'G2'))]
     for o in bpy.context.selected_objects: o.select_set(False)
     for o in inner: o.select_set(True)
-    for nm in ('RampPivot',): bpy.data.objects[nm].select_set(True)
     pass
     for o in bpy.data.objects:
         if o.type in ('MESH', 'EMPTY') and o.name not in hide: o.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'spacecraft_v13.glb'), export_format='GLB', use_selection=True, export_apply=True, export_animations=True, export_lights=False)
-    print('MODEL glb', os.path.getsize(os.path.join(OUT, 'spacecraft_v13.glb')))
+    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'spacecraft_v17.glb'), export_format='GLB', use_selection=True, export_apply=True, export_animations=True, export_lights=False)
+    print('MODEL glb', os.path.getsize(os.path.join(OUT, 'spacecraft_v17.glb')))
 
 KEYS = None
 def walk_keys():
@@ -1838,16 +2192,14 @@ def keyframe_walk():
 def save_blend():
     try:
         bpy.ops.file.pack_all()
-        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'spacecraft_v13.blend'), compress=True)
-        print('MODEL blend', os.path.getsize(os.path.join(OUT, 'spacecraft_v13.blend')))
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'spacecraft_v17.blend'), compress=True)
+        print('MODEL blend', os.path.getsize(os.path.join(OUT, 'spacecraft_v17.blend')))
     except Exception as e: print('Error blend', e)
 
 
 # ------------------------------------------------------------------ v10 HOUSE-TOUR walk-through (shot list, cuts between rooms)
 sc.frame_set(120); bpy.context.view_layer.update()
-_rp = bpy.data.objects['Ramp']; _cs = [_rp.matrix_world @ Vector(c) for c in _rp.bound_box]
-_lo = min(_cs, key=lambda v: v.z); _hi = max(_cs, key=lambda v: v.z)
-RX0, RZ0, RX1, RZ1 = _lo.x, _lo.z + .06, HATCH[0] + .2, ZF
+RX0, RZ0, RX1, RZ1 = RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)), -5.44, RAMP_X0, KF   # v17 belly ramp
 yc_ = (WY0 + WY1) / 2; xc2 = (ROOMS[2][0] + ROOMS[2][1]) / 2
 def orbit(a0, a1, r0, r1, z0, z1, n=6):
     return [(k / (n - 1), (math.cos(math.radians(a0 + (a1 - a0) * k / (n - 1))) * (r0 + (r1 - r0) * k / (n - 1)), math.sin(math.radians(a0 + (a1 - a0) * k / (n - 1))) * (r0 + (r1 - r0) * k / (n - 1)), z0 + (z1 - z0) * k / (n - 1)), (0, 0, -1)) for k in range(n)]
@@ -1883,17 +2235,32 @@ def tour_frame(f, path, res=(1280, 720)):
     for o in CEIL: o.hide_render = False
     look(loc, tgt, lens); r.resolution_x, r.resolution_y = res; r.filepath = path; bpy.ops.render.render(write_still=True)
 
+def raised(on):
+    for o in bpy.data.objects:
+        if o.name.startswith('HoloTable_raised'): o.hide_render = not on
+        elif o.name.startswith('HoloTable'): o.hide_render = on
+def topdown(name, z=1.38, res=(1600, 1000)):
+    hid = [o for o in bpy.data.objects if (o.name in ('Hull', 'Pad') or o.name.startswith(('X', 'HallDome', 'Skylight', 'HallRib', 'DomeRing'))) and not o.hide_render]
+    for o in hid: o.hide_render = True
+    for o in CEIL: o.hide_render = True
+    sc.frame_set(200); cam.data.type = 'ORTHO'; cam.data.ortho_scale = 62; cam.data.clip_start = .01; cam.data.clip_end = 40
+    cam.location = (0, 0, z); cam.rotation_euler = (0, 0, 0)
+    r.resolution_x, r.resolution_y = res; r.filepath = os.path.join(OUT, name + '.png'); bpy.ops.render.render(write_still=True); print('RENDER', name)
+    cam.data.type = 'PERSP'
+    for o in hid: o.hide_render = False
+    for o in CEIL: o.hide_render = False
 if DRY:
     sc.cycles.samples = SPP
-    shot('x1_exterior', 120, (48, -39, 21), (0, 0, 0), 35, pad=False)
-    shot('x2_top_detail', 120, (6, -16, 14), (-4, 0, 1), 30, pad=False)
-    shot('x3_rear', 120, (-52, 30, 14), (0, 0, 0), 35, pad=False)
-    shot('r1_hybrid_core', 240, (XSB + .2, -.6, ZA + 2.1), (EX, 0, zc_ - .1), 18)
-    shot('r2_core_close', 240, (EX + 1.2, 2.25, zc_ + 1.0), (EX, 0, zc_ - .1), 18)
+    shot('x1_exterior_below', 120, (30, -34, -10), (0, 0, -2.5), 30, pad=False)
+    shot('b2_ramp_exterior', 200, (9.5, -6.5, -4.6), (-2.5, 0, -3.6), 22)
+    shot('b1_entrance_bay', 200, (-0.6, 3.9, -2.3), (-6.6, -.6, -3.0), 16)
+    shot('h1_hall_empty', 120, (2.4, -1.8, Z0 + 1.7), (-7.5, .8, Z0 + .5), 18)
+    raised(True); shot('h2_hall_table_raised', 120, (1.2, 2.9, Z0 + 2.1), (HC.x, 0, Z0 + .9), 20); raised(False)
+    shot('c1_corridor_from_hall', 160, (HC.x + HR - 2.6, 0, Z0 + 1.65), (CX1 + 1, 0, Z0 + 1.2), 18)
+    shot('c2_cabin', 160, (7.9, 1.15, Z0 + 1.75), (5.4, 3.3, Z0 + .5), 16)
     shot('h5_reactor_window', 240, (-7.6, 1.9, Z0 + 1.9), (EX, 1.0, 1.7), 24)
-    shot('h9_shield_stairs', 240, (-8.4, -.3, Z0 + 1.6), (XSB - 1.5, 0, ZA + .9), 16)
-    shot('c1_corridor', 160, (HC.x + HR + 1.2, 0, ZF + 1.65), (BR, 0, ZF + 1.3), 18)
-    shot('p1_cutaway', 240, (34, -30, 34), (0, 0, -1), 30, cut=1, pad=False)
+    shot('r1_hybrid_core', 240, (XSB + .2, -.6, ZA + 2.1), (EX, 0, zc_ - .1), 18)
+    topdown('t1_topdown_section')
     save_blend()
     try: export_glbs()
     except Exception as e: print('Error glb', e)
