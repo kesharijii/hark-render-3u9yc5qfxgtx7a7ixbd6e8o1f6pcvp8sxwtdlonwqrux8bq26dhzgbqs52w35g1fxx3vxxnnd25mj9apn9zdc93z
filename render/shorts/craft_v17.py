@@ -1936,56 +1936,62 @@ for k in range(8): Box(f'LoftLadderRung{k}', (11.5, .4, Z0 + .3 + k * .28), (.03
 Box('LoftHatchFrame', (11.5, .4, CZC + .07), (.75, .7, .03), M_AMBER)
 print('MODEL v17 crew block: cabins', len(CAB), 'loft racks', _nr)
 
-# ---- B1. keel entrance bay: faired bulge under the hall (superellipse n=4), floor -4.2, open centre, racks, storage, ramp, stair
-KR, KT, KB, KF = 7.05, -1.25, -4.55, -4.2
+# ---- B1 (v17b-2). entrance bay inside a SHALLOW faired belly disc (user refs 16:24): flat bottom r<RF at KB, cosine-eased
+#      rise that lands tangentially on the hull / blister / sponson underside at RE, rim tucked 6 cm inside that skin.
+#      Bay floor KF -3.42: headroom 2.22 m under the hall slab (-1.2), 2.07 m under the blister belly plate (-1.35).
+KR, KT, KB, KF = 7.05, -1.25, -3.57, -3.42
+RF, RE, RIMX = 5.2, 9.3, .5
 KD = KT - KB
-RAMP_X0, RAMP_L, RAMP_A = -1.5, 2.9, 27.0
-def ramp_hole(x, y): return RAMP_X0 - .02 < x < RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .08 and abs(y) < .95
+RH_C = (-0.3, 0.0); RH_R = 1.25                                 # round belly hatch (lit ring) the boarding stair drops through
+RAMP_X0 = RH_C[0] - RH_R + .12; RAMP_A = 40.0; RAMP_L = (KF - (-5.5)) / math.sin(math.radians(RAMP_A))
+def ramp_hole(x, y): return math.hypot(x - RH_C[0], y - RH_C[1]) < RH_R
 def t_keel(P_): return (rr_(P_) < KR - .05) & (P_[:, 2] < Z0 - .25) & (P_[:, 2] > KB - .3)
-_nk = carve_faces(hull, lambda P_: (rr_(P_) < KR - .03) & (P_[:, 2] < KT - .05) & (P_[:, 2] > KB - .5))
-for o in list(bpy.data.objects):
-    if o.name.startswith(('Hull', 'Skylight', 'Dome')) or o == hull: continue
-    if o.name.startswith('X'):
-        if t_keel(np.array([list(o.matrix_world.translation)]))[0] or (rr_(np.array([list(o.matrix_world.translation)]))[0] < KR + 1.9 and o.matrix_world.translation.z < -.3): _rm(o)   # v17b: plates under the fillet too
-        continue
-    if o.type == 'MESH':
-        try: _nk += carve_faces(o, t_keel)
-        except Exception as e: print('Error keelcarve', o.name, e)
-print('MODEL v17 keel volume carved', _nk)
-# ---- v17b B1 fairing: the keel bay hull is one faired belly: superellipse bottom, vertical side at r KR, then a concave fillet
-#      that runs tangentially into whatever is above it (hull / blister / sponson underside), rim tucked 6 cm inside that skin.
 ENVB = bvh_of(['Hull', 'HallBlister', 'HallBlisterBelly'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')])
 def env_z(x, y):
     h = ENVB.ray_cast(Vector((x, y, -14.0)), Vector((0, 0, 1)), 30.0)
     return h[0].z if h[0] is not None and h[0].z < 1.5 else None
-NA_ = 120; FR0 = 1.0; RIMX = .55; CZ = 1.2
+NA_ = 144
 _zE = []; _zR = []
 for j in range(NA_):
-    a = 360 * j / NA_
-    p1 = pol(KR + FR0, a, 0); p2 = pol(KR + FR0 + RIMX, a, 0)
+    a = 360 * j / NA_; p1 = pol(RE, a, 0); p2 = pol(RE + RIMX, a, 0)
     e1 = env_z(p1[0], p1[1]); e2 = env_z(p2[0], p2[1])
     _zE.append(e1 if e1 is not None else -1.0); _zR.append(e2 if e2 is not None else (e1 if e1 is not None else -1.0))
 _zE = np.array(_zE); _zR = np.array(_zR)
 def _csm(v, k=7):
     w = np.ones(k) / k; vv = np.concatenate([v[-k:], v, v[:k]]); return np.convolve(vv, w, 'same')[k:-k]
-zE_s = np.minimum(_csm(_zE), _zE + .25) + .03; zR_s = np.maximum(_csm(_zR), _zR) + .06
-V = []; F = []; FCOL = []
-NPRO = None
+zE_s = np.minimum(_csm(_zE), _zE + .2) + .03; zR_s = np.maximum(np.maximum(_csm(_zR), _zR) + .06, zE_s)
+def fair_z(r, a_deg):        # vectorised fairing height (r, angle in degrees)
+    j = (np.asarray(a_deg) % 360) / 360 * NA_; j0 = np.floor(j).astype(int) % NA_; t = j - np.floor(j); j1 = (j0 + 1) % NA_
+    zE = zE_s[j0] * (1 - t) + zE_s[j1] * t
+    u = np.clip((np.asarray(r) - RF) / (RE - RF), 0, 1)
+    return KB + (zE - KB) * (1 - np.cos(np.pi * u)) / 2
+def t_under(P_):
+    r = rr_(P_); a = np.degrees(np.arctan2(P_[:, 1] - HC.y, P_[:, 0] - HC.x))
+    return (r < RE - .02) & (P_[:, 2] < fair_z(r, a) + .03) & (P_[:, 2] > KB - 3.0)
+_nk = carve_faces(hull, lambda P_: t_under(P_) | ((rr_(P_) < KR - .03) & (P_[:, 2] < KT - .05) & (P_[:, 2] > KB - .5))
+                  | ((P_[:, 0] > -7.35) & (P_[:, 0] < -4.45) & (np.abs(P_[:, 1]) < .8) & (P_[:, 2] < Z0 - .05) & (P_[:, 2] > KB - .5)))
+for o in list(bpy.data.objects):
+    if o.name.startswith(('Hull', 'Skylight', 'Dome')) or o == hull: continue
+    if o.name.startswith('X'):
+        P1 = np.array([list(o.matrix_world.translation)])
+        if t_keel(P1)[0] or (rr_(P1)[0] < RE + .7 and P1[0, 2] < -.3): _rm(o)
+        continue
+    if o.type == 'MESH':
+        try: _nk += carve_faces(o, t_keel)
+        except Exception as e: print('Error keelcarve', o.name, e)
+print('MODEL v17 keel volume carved', _nk)
+V = []; F = []; NPRO = None
 for j in range(NA_):
-    a = 360 * j / NA_; zE = float(zE_s[j]); zR = float(max(zR_s[j], zE))
-    avail = zE - KB; Fr = float(np.clip(avail * .4, .35, FR0)); cz = float(min(CZ, avail - Fr - .05))
-    pro = []
-    for t in np.linspace(math.pi / 2 - .02, 0, 10): pro.append((KR * math.cos(t) ** .5, (KB + cz) - cz * math.sin(t) ** .5))
-    for zz in np.linspace(KB + cz, zE - Fr, 4)[1:]: pro.append((KR, float(zz)))
-    for ph in np.linspace(0, math.pi / 2, 9)[1:]: pro.append((KR + Fr - Fr * math.cos(ph), zE - Fr + Fr * math.sin(ph)))
-    pro.append((KR + FR0 + RIMX, zR))
+    a = 360 * j / NA_; zR = float(zR_s[j])
+    rs = [.02] + list(np.linspace(.6, RF, 9)) + list(np.linspace(RF, RE, 15)[1:])
+    pro = [(float(r_), float(fair_z(r_, a))) for r_ in rs] + [(RE + RIMX, zR)]
     NPRO = len(pro)
     for (r_, z_) in pro: V.append(pol(r_, a, z_))
 for j in range(NA_):
     for i in range(NPRO - 1):
         a_, b_ = j * NPRO + i, ((j + 1) % NA_) * NPRO + i
         F.append((a_, b_, b_ + 1, a_ + 1))          # outward normals (bottom faces point down)
-F.append(tuple(j * NPRO for j in range(NA_))[::-1])  # centre cap, normal down
+F.append(tuple(j * NPRO for j in range(NA_))[::-1])
 M_FAIR = hull.data.materials[0].copy(); M_FAIR.name = 'KeelFairingHull'; M_FAIR.use_backface_culling = False
 ks = mk('KeelFairing', V, F, M_FAIR, smooth=True)
 _ca = ks.data.color_attributes.new('Livery', 'FLOAT_COLOR', 'POINT')
@@ -1995,14 +2001,13 @@ try:
     hco = np.empty(nvh * 3, np.float32); hull.data.vertices.foreach_get('co', hco); hco = hco.reshape(-1, 3)
     Mh = np.array(hull.matrix_world); hW = hco @ Mh[:3, :3].T + Mh[:3, 3]
     hcol = np.empty(nvh * 4, np.float32); hl_.data.foreach_get('color', hcol); hcol = hcol.reshape(-1, 4)
-    sel = np.where((np.abs(hW[:, 0] - HC.x) < 13) & (np.abs(hW[:, 1]) < 13) & (hW[:, 2] < .5))[0]
+    sel = np.where((np.abs(hW[:, 0] - HC.x) < 14) & (np.abs(hW[:, 1]) < 14) & (hW[:, 2] < .5))[0]
     kd = _KDT(len(sel))
     for k_, i_ in enumerate(sel): kd.insert(hW[i_], k_)
-    kd.balance()
-    vc = []
+    kd.balance(); vc = []
     for v_ in V:
         _, k_, _ = kd.find(v_); c4 = hcol[sel[k_]].copy()
-        if v_[2] < KB + .6: c4[:3] = (.055, .06, .07)                       # flat bottom: plain livery char (no stray stripes)
+        if v_[2] < KB + .5: c4[:3] = (.055, .06, .07)
         vc.append(c4)
     _ca.data.foreach_set('color', np.array(vc, np.float32).ravel())
 except Exception as e:
@@ -2010,44 +2015,63 @@ except Exception as e:
 uvl_ = ks.data.uv_layers.new(name='UVMap')
 for poly in ks.data.polygons:
     for li in poly.loop_indices: v_ = V[ks.data.loops[li].vertex_index]; uvl_.data[li].uv = (v_[0] / 20, v_[1] / 20)
-so_ = ks.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = -1
-print('MODEL v17b keel fairing: angles', NA_, 'profile pts', NPRO, 'fillet top z min/max', round(float(zE_s.min()), 2), round(float(zE_s.max()), 2), 'rim z', round(float(zR_s.min()), 2), round(float(zR_s.max()), 2))
-fk = polar_grid('KeelFloor', 0.0, 5.4, lambda r: KF, M_HFL, dr=.3, da=3.0)          # v17b: no ramp hole in the default (closed) state
-so_ = fk.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .15; so_.offset = -1
-for k, x in enumerate((RAMP_X0, RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .06)): Box(f'RampWellEdge{k}', (x, 0, KF + .005), (.05, 1.9, .01), M_AMBER)
-# closed belly door outline (3 mm seam trim on the fairing underside)
-_dx0, _dx1 = RAMP_X0, RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .06
-def _zbot(x, y):
-    r_ = math.hypot(x - HC.x, y - HC.y); c_ = min(1.0, (r_ / KR) ** 2); t_ = math.acos(c_); return (KB + CZ) - CZ * math.sin(t_) ** .5
-for nm_, c_, sz_ in (('A', (_dx0, 0), (.04, 1.94, .004)), ('B', (_dx1, 0), (.04, 1.94, .004)), ('C', ((_dx0 + _dx1) / 2, .95), (_dx1 - _dx0, .04, .004)), ('D', ((_dx0 + _dx1) / 2, -.95), (_dx1 - _dx0, .04, .004))):
-    Box(f'KeelDoorSeam{nm_}', (c_[0], c_[1], _zbot(c_[0], c_[1]) - .001), sz_, M_HD)
-# boarding ramp: EXTENDED state kept as hidden objects (BellyRampExt*), default = closed flush in the keel
-hx = RAMP_X0; ca_, sa_ = math.cos(math.radians(RAMP_A)), math.sin(math.radians(RAMP_A))
-_ext = [Box('BellyRampExt', (hx + ca_ * RAMP_L / 2, 0, KF - .05 - sa_ * RAMP_L / 2), (RAMP_L, 1.8, .1), M_HFL, rot=(0, RAMP_A, 0))]
-for k in range(9): _ext.append(Box(f'BellyRampExtTread{k}', (hx + ca_ * (.25 + k * .3), 0, KF + .005 - sa_ * (.25 + k * .3)), (.05, 1.6, .02), M_HD, rot=(0, RAMP_A, 0)))
+so_ = ks.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .06; so_.offset = -1
+# round belly hatch: clean boolean opening through the fairing and the bay floor
+def _cutter(nm, r, z0, z1):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=96, radius=r, depth=z1 - z0, location=(RH_C[0], RH_C[1], (z0 + z1) / 2))
+    c = bpy.context.active_object; c.name = nm; c.hide_render = True; c.hide_viewport = True; c.display_type = 'WIRE'; return c
+_hc = _cutter('BellyHatchCutter', RH_R, KB - .6, KF + .3)
+bo = ks.modifiers.new('Hatch', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.object = _hc; bo.solver = 'EXACT'
+fk = polar_grid('KeelFloor', 0.0, RF - .2, lambda r: KF, M_HFL, dr=.3, da=3.0)
+so_ = fk.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = -1
+bo = fk.modifiers.new('Hatch', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.object = _hc; bo.solver = 'EXACT'
+# hatch well: short lined tube from the bay floor to the belly, warm lit ring at the belly edge and at the floor edge
+Cyl('BellyHatchWell', (RH_C[0], RH_C[1], (KF + KB) / 2), RH_R + .01, KF - KB + .02, M_HD, v=96)
+_w = bpy.data.objects['BellyHatchWell']; _wm = _w.data
+bm = bmesh.new(); bm.from_mesh(_wm); bmesh.ops.delete(bm, geom=[f for f in bm.faces if abs(f.normal.z) > .9], context='FACES_ONLY'); bmesh.ops.reverse_faces(bm, faces=bm.faces[:]); bm.to_mesh(_wm); bm.free()
+M_WARMRING = pbsdf('HatchWarmRing', (1, .72, .42), 0, .4, (1, .62, .3), 14)
+Tor('BellyHatchRing', (RH_C[0], RH_C[1], KB + .01), RH_R + .02, .025, M_WARMRING, ms=96, ns=8)
+Tor('BellyHatchFloorRing', (RH_C[0], RH_C[1], KF + .006), RH_R + .03, .012, M_AMBER, ms=96, ns=6)
+_pl = bpy.data.lights.new('BellyHatchGlow', 'POINT'); _pl.energy = 140; _pl.color = (1, .74, .45); _pl.shadow_soft_size = .4
+_po = bpy.data.objects.new('BellyHatchGlow', _pl); col.objects.link(_po); _po.location = (RH_C[0], RH_C[1], KF + .35)
+# CLOSED state (hidden alternative): flush belly door + floor plate
+_cl = [Cyl('BellyHatchClosedDoor', (RH_C[0], RH_C[1], KB + .03), RH_R + .005, .06, M_FAIR, v=96), Cyl('BellyHatchClosedFloor', (RH_C[0], RH_C[1], KF - .04), RH_R + .005, .08, M_HFL, v=96)]
+for o in _cl:
+    o.data.color_attributes.new('Livery', 'FLOAT_COLOR', 'POINT').data.foreach_set('color', np.tile([.055, .06, .07, 1], len(o.data.vertices)).astype(np.float32))
+    o.hide_render = True; o.hide_viewport = True
+# boarding stair ramp (deployed, default): slim stair with glowing step edges and lit side rails, from the hatch to the ground
+ca_, sa_ = math.cos(math.radians(RAMP_A)), math.sin(math.radians(RAMP_A)); hx = RAMP_X0
+def _rp(d, y, dz=0.0): return (hx + ca_ * d, y, KF - sa_ * d + dz)
+NRT = 11; rise_ = (KF + 5.5) / NRT; run_ = rise_ / math.tan(math.radians(RAMP_A))
+for k in range(NRT):
+    xs_ = hx + run_ * (k + .5); zt = KF - rise_ * (k + 1) + .0
+    Box(f'BoardRampStep{k:02d}', (xs_, 0, zt - .015), (run_ + .03, .92, .03), M_HD)
+    Box(f'BoardRampStepEdge{k:02d}', (xs_ + run_ / 2 - .012, 0, zt + .002), (.022, .9, .008), M_WARMRING)
 for s in (1, -1):
-    _ext.append(Box(f'BellyRampExtRail{s}', (hx + ca_ * RAMP_L / 2, s * .86, KF + .1 - sa_ * RAMP_L / 2), (RAMP_L, .05, .22), M_STEEL, rot=(0, RAMP_A, 0)))
-    _ext.append(Box(f'BellyRampExtLight{s}', (hx + ca_ * RAMP_L / 2, s * .8, KF + .02 - sa_ * RAMP_L / 2), (RAMP_L - .1, .02, .02), M_CYAN, rot=(0, RAMP_A, 0)))
-    _ext.append(Cyl(f'BellyRampExtPiston{s}', (hx + .5, s * .95, KF - .35), .05, 1.0, M_STEEL, rot=(0, 90 - 35, 0), v=12))
-for o in _ext: o.hide_render = True; o.hide_viewport = True
-print('MODEL v17 ramp lower end z', round(KF - sa_ * RAMP_L, 2), '(extended state hidden; default closed)')
-# straight stair up to the off-centre hatch (16 risers, 0.2 m); v17b: everything stays below the closed hatch leaves
+    Box(f'BoardRampStringer{s}', _rp(RAMP_L / 2, s * .5, -.06), (RAMP_L + .05, .05, .16), M_HD, rot=(0, RAMP_A, 0))
+    Box(f'BoardRampRailGlow{s}', _rp(RAMP_L / 2, s * .5, .03), (RAMP_L, .02, .015), M_WARMRING, rot=(0, RAMP_A, 0))
+    Box(f'BoardRampHandrail{s}', _rp(RAMP_L * .55, s * .52, .9), (RAMP_L * .78, .035, .035), M_STEEL, rot=(0, RAMP_A, 0))
+    for k, d in enumerate((RAMP_L * .25, RAMP_L * .55, RAMP_L * .9)):
+        Box(f'BoardRampPost{s}{k}', _rp(d, s * .52, .45), (.03, .03, .9), M_STEEL)
+print('MODEL v17b belly disc: KB', KB, 'KF', KF, 'RF', RF, 'RE', RE, 'headroom under slab', round(-1.2 - KF, 2), 'under belly plate', round(-1.35 - KF, 2),
+      'rim z', round(float(zR_s.min()), 2), round(float(zR_s.max()), 2), '| stair ramp', NRT, 'steps', round(RAMP_A, 1), 'deg, length', round(RAMP_L, 2), 'foot x', round(hx + ca_ * RAMP_L, 2))
+# straight stair up to the off-centre hatch (0.2 m risers); everything stays below the closed hatch leaves
 HX0, HX1, HHW = -7.2, -4.6, .65
-SX0_ = -8.2; NSR = 16; srise = (Z0 - KF) / NSR; srun = (HX1 - SX0_) / NSR
+NSR = int(round((Z0 - KF) / .2)); srise = (Z0 - KF) / NSR; srun = .25; SX0_ = HX1 - NSR * srun
 def _tread(x): return KF + (x - SX0_) / (HX1 - SX0_) * (Z0 - KF)
-for k in range(NSR - 1):                      # the last riser lands on the hall floor edge itself
+for k in range(NSR - 1):
     zt = KF + (k + 1) * srise; x0 = SX0_ + k * srun
     Box(f'KeelStairTread{k:02d}', (x0 + srun / 2, 0, zt - .025), (srun + .02, 1.1, .05), M_HFL)
     Box(f'KeelStairNose{k:02d}', (x0 + .02, 0, zt + .003), (.03, 1.0, .006), M_CYAN)
 sang = math.degrees(math.atan2(Z0 - KF, HX1 - SX0_)); cs_ = math.cos(math.radians(sang))
 _sa, _sb = SX0_ + .3, HX1 - .25
-XR_END = SX0_ + (Z0 - .17 - .87 - KF) / (Z0 - KF) * (HX1 - SX0_)      # rail top stays >= 0.15 m below the hall floor
+XR_END = SX0_ + (Z0 - .17 - .87 - KF) / (Z0 - KF) * (HX1 - SX0_)
 for s in (1, -1):
     xm = (_sa + _sb) / 2; Box(f'KeelStairStringer{s}', (xm, s * .58, _tread(xm) - .2), ((_sb - _sa) / cs_, .05, .3), M_STEEL, rot=(0, -sang, 0))
     xm = (SX0_ + XR_END) / 2; Box(f'KeelStairRail{s}', (xm, s * .6, _tread(xm) + .85), ((XR_END - SX0_) / cs_, .04, .04), M_HD, rot=(0, -sang, 0))
-    for k, xx in enumerate(np.linspace(SX0_ + .3, XR_END - .12, 4)):
+    for k, xx in enumerate(np.linspace(SX0_ + .3, XR_END - .12, 3)):
         xx = float(xx); Box(f'KeelStairPost{s}{k}', (xx, s * .6, _tread(xx) + .45), (.03, .03, .9), M_STEEL)
-print('MODEL v17b stair rails end x', round(XR_END, 2), 'rail top z', round(_tread(XR_END) + .87, 2), 'hall floor', Z0)
+print('MODEL v17b stair', NSR, 'risers from x', round(SX0_, 2), 'rails end x', round(XR_END, 2), 'rail top z', round(_tread(XR_END) + .87, 2))
 # two-leaf armoured sliding hatch: gunmetal armour plate with a livery-orange border, dark ribs, glowing cyan seam, gold emblem
 M_HATCH = pbsdf('HatchArmourPlate', (.16, .17, .19), .85, .34)
 for s in (1, -1):
@@ -2068,7 +2092,7 @@ for s in (1, -1): Box(f'HatchWell{s}', ((HX0 + HX1) / 2, s * (HHW + .02), Z0 - .
 # artillery racks + loader (port side), storage (starboard), lights, lift pillar under the holo table
 M_MSL = pbsdf('Ordnance', (.55, .57, .6), .7, .3)
 for k, a in enumerate((60, 80, 100, 120)):
-    c_ = pol(4.95, a, 0); t_ = (-math.sin(math.radians(a)), math.cos(math.radians(a)))
+    c_ = pol(4.6, a, 0); t_ = (-math.sin(math.radians(a)), math.cos(math.radians(a)))
     for e in (-1, 1):
         q_ = (c_[0] + t_[0] * e * .9, c_[1] + t_[1] * e * .9)
         Box(f'ArtRackUpright{k}{e}', (q_[0], q_[1], KF + 1.0), (.12, .12, 2.0), M_STEEL, rot=(0, 0, a))
@@ -2079,7 +2103,7 @@ for k, a in enumerate((60, 80, 100, 120)):
         for e in (-1, 1):
             q_ = (c_[0] + t_[0] * e * 1.05, c_[1] + t_[1] * e * 1.05)
             if e > 0: bpy.ops.mesh.primitive_cone_add(vertices=20, radius1=.17, depth=.35, location=(q_[0], q_[1], zz), rotation=(math.radians(-90), 0, math.radians(a))); o = bpy.context.active_object; o.name = f'ArtShellTip{k}{j}'; o.data.materials.append(M_ORNG)
-    Box(f'ArtRackLabel{k}', (pol(4.62, a, 0)[0], pol(4.62, a, 0)[1], KF + 2.05), (.02, .6, .12), M_SCR2, rot=(0, 0, a))
+    Box(f'ArtRackLabel{k}', (pol(4.27, a, 0)[0], pol(4.27, a, 0)[1], KF + 2.05), (.02, .6, .12), M_SCR2, rot=(0, 0, a))
 # overhead loader: curved rail at r 4.2 + gantry trolley with a claw and a cradle cart on the floor
 ann('LoaderRail', 4.15, 4.3, 50, 130, -1.62, -1.5, M_STEEL, step=2)
 lc = pol(4.22, 90, 0)
@@ -2090,14 +2114,14 @@ Box('LoaderCart', (cc[0], cc[1], KF + .35), (.9, 1.4, .1), M_STEEL); Cyl('Loader
 for e in (-1, 1):
     for f_ in (-1, 1): Cyl(f'LoaderCartWheel{e}{f_}', (cc[0] + e * .35, cc[1] + f_ * .55, KF + .12), .12, .08, M_HD, rot=(0, 90, 0), v=16)
 for k, a in enumerate(range(236, 306, 9)):
-    Box(f'BayLocker{k}', pol(5.05, a, KF + 1.0), (.55, .62, 2.0), M_CAB, rot=(0, 0, a))
-    Box(f'BayLockerSeam{k}', pol(4.77, a, KF + 1.0), (.01, .01, 1.9), M_SEAM, rot=(0, 0, a))
+    Box(f'BayLocker{k}', pol(4.7, a, KF + 1.0), (.55, .62, 2.0), M_CAB, rot=(0, 0, a))
+    Box(f'BayLockerSeam{k}', pol(4.42, a, KF + 1.0), (.01, .01, 1.9), M_SEAM, rot=(0, 0, a))
 for k, (a, n) in enumerate(((210, 3), (222, 2), (314, 3), (326, 1))):
-    for j in range(n): Box(f'BayCrate{k}{j}', pol(4.6, a, KF + .3 + j * .6), (.6, .6, .6), M_CRATE, rot=(0, 0, a + 7 * j))
+    for j in range(n): Box(f'BayCrate{k}{j}', pol(4.3, a, KF + .3 + j * .6), (.6, .6, .6), M_CRATE, rot=(0, 0, a + 7 * j))
 Cyl('HoloLiftShaft', (HC.x, HC.y, (KF - Z0) / 2 + Z0 - .1), .8, Z0 - KF - .2, M_HD, v=48)
 Tor('HoloLiftRing', (HC.x, HC.y, KF + .05), .82, .03, M_CYAN, ms=48, ns=6)
 for k, (r_, a) in enumerate(((2.5, 90), (2.5, 270), (2.5, 0), (2.5, 180), (4.3, 45), (4.3, 315))): Area(f'BayLight{k}', pol(r_, a, -1.5), 1.0, 70, (.85, .92, 1))
-Area('RampLight', (RAMP_X0 + 1.0, 0, -1.6), 1.2, 90, (1, .85, .65))
+Area('RampLight', (RH_C[0], 0, -1.6), 1.2, 90, (1, .85, .65))
 
 # ---- B2. hall: holo table flush in the centre (raised copy hidden), curved sofas along the edge
 def holo_table(nm, dz):
@@ -2158,7 +2182,7 @@ BR_PFX = ('Pilot', 'Ctrl_', 'Stick', 'ThrTrack', 'ThrSlot', 'ThrLever', 'ThrKnob
           'Mode', 'OverheadPanel', 'Sw', 'Captain')
 _nb = 0
 for o in bpy.data.objects:
-    if o.parent is None and o.name.startswith(BR_PFX) and o.location.x > BR + .8 and abs(o.location.y) < 4.5 and o.location.z < ZB + 3.0: o.location.x += DXB; _nb += 1
+    if o.parent is None and o.name.startswith(BR_PFX) and o.location.x > BR + .8 and abs(o.location.y) < 4.5 and (o.location.z < ZB + 3.0 or o.name.startswith(('OverheadPanel', 'Ctrl_Switch_', 'SwGuard'))): o.location.x += DXB; _nb += 1   # v17b: overhead switch panel moves with the pilots
 zc_old = (ceil_at(px_old + .3, 0, ZB + .1) or ZB + 2.0) - .12; zc_new = (ceil_at(px + .3, 0, ZB + .1) or ZB + 2.0) - .12
 for o in bpy.data.objects:
     if o.parent is None and o.name.startswith(('OverheadPanel', 'Ctrl_Switch_', 'SwGuard')) and o.location.x > BR + .8: o.location.z += zc_new - zc_old
@@ -2594,9 +2618,13 @@ except Exception:
 # ---- A4 (v17b). strict outside-hull check: every interior vertex is tested against the outer shell
 #      (14-direction escape rays + closest-point normal sign), then fixed: small parts are inset to >= 0.15 m clearance,
 #      large parts (linings, floors, frames) have their offending vertices pulled 0.08 m inside the skin.
-SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelFairing', 'SkylightGlass'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
+SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelFairing', 'SkylightGlass', 'BellyHatchClosedDoor'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
+_cd = bpy.data.objects.get('BellyHatchClosedDoor')
+if _cd: _cd.hide_viewport = False          # the check treats the hatch as closed so the open hatch does not read as 'outside'
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 SB = bvh_of(SHELL)
+if _cd: _cd.hide_viewport = True
+bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 D14 = [Vector(v).normalized() for v in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1), (1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1))]
 def _esc(P):
     n = 0
@@ -2610,7 +2638,7 @@ def pstate(p):
     e = _esc(P)
     out = e >= 3 or (e >= 1 and (P - loc).dot(nrm) > .005)
     return out, (-dist if out else dist), loc, nrm
-EXT_PFX = ('Hull', 'X', 'Nav', 'Strobe', 'Thruster', 'Exhaust', 'Plume', 'Winglet', 'Strake', 'KeelFairing', 'KeelDoorSeam', 'Pad', 'Skylight', 'NozL', 'BellyRampExt')
+EXT_PFX = ('Hull', 'X', 'Nav', 'Strobe', 'Thruster', 'Exhaust', 'Plume', 'Winglet', 'Strake', 'KeelFairing', 'KeelDoorSeam', 'Pad', 'Skylight', 'NozL', 'BellyRampExt', 'BoardRamp', 'BellyHatch')
 def _interior(o):
     return (o.type == 'MESH' and not o.hide_render and not o.name.startswith(EXT_PFX) and o.name not in SHELL
             and not o.name.endswith(('Sponson', 'SponsonCut', 'SponsonWinCut', 'SponsonStripe')) and o.name not in SIDE_CUTTERS)
@@ -2853,6 +2881,7 @@ if DRY:
     shot('x2_exterior_belly_3q', 120, (3.5, -21, -6.2), (-3.2, 0, -3.0), 30, pad=False)
     shot('x3_below_hall', 120, (-3.0, -2.5, -26), (-3.0, 0, -2.0), 32, pad=False)
     shot('x4_top', 120, (0, -1.0, 78), (0, 0, 0), 30, pad=False)
+    shot('b2_ramp_exterior', 200, (8.0, -9.0, -4.9), (-0.6, 0, -4.1), 24)
     shot('h1_hall_empty', 120, (2.4, -1.8, Z0 + 1.7), (-7.5, .8, Z0 + .5), 18)
     shot('h3_hatch_closed', 120, (-3.4, -2.2, Z0 + 1.8), (-5.9, 0, Z0), 22)
     shot('b1_entrance_bay', 200, (-0.6, 3.9, -2.3), (-6.6, -.6, -3.0), 16)
