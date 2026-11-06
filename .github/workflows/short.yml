@@ -46,14 +46,15 @@ jobs:
           ls -la
           sudo apt-get install -y -q --no-install-recommends libxi6 libxkbcommon0 libsm6 libgl1 >/dev/null 2>&1 || true
       - name: Render
-        env: { SPP: "${{ inputs.spp }}", DRY: "${{ inputs.check }}" }
+        timeout-minutes: 180
+        env: { SPP: "${{ inputs.spp }}", DRY: "${{ inputs.check }}", PYTHONUNBUFFERED: "1" }
         run: |
           mkdir -p frames; NFR=${{ inputs.nfr }}
           if [ -n "$DRY" ]; then S=1; E=$NFR; else
             CH=$(( (NFR + CHUNKS - 1) / CHUNKS )); S=$(( ${{ matrix.part }} * CH + 1 )); E=$(( S + CH - 1 )); [ $E -gt $NFR ] && E=$NFR; fi
           echo "frames $S-$E"; T0=$(date +%s)
           ~/blender/blender -b ~/assets/host.blend -P render/shorts/${{ inputs.ep }}.py -- $PWD/frames ~/assets $S $E 2>&1 \
-            | grep -E "Fra:.*Finished|Saved|Error|Traceback|RENDER|WITCH|FACE|EYES|MODEL|TIMING|FROZEN|DONE|File \"|line [0-9]|Exception" | grep -v "Fra:.*Path Tracing" | tail -120 || true
+            | grep --line-buffered -E "Fra:.*Finished|Saved|Error|Traceback|RENDER|WITCH|FACE|EYES|MODEL|TIMING|FROZEN|DONE|File \"|line [0-9]|Exception" | grep --line-buffered -v "Fra:.*Path Tracing" | tee frames/model_${{ matrix.part }}.log | tail -120 || true
           echo "part ${{ matrix.part }} seconds $(( $(date +%s) - T0 )) frames $(ls frames/*.png 2>/dev/null | wc -l)" | tee frames/time_${{ matrix.part }}.txt
           if [ -z "$DRY" ]; then [ $(ls frames/f_* 2>/dev/null | wc -l) -ge 1 ]; fi
       - uses: actions/upload-artifact@v4
