@@ -2674,7 +2674,7 @@ for o in list(bpy.data.objects):
                 loc = st[k][2]
                 d_ = (cen - loc).normalized() if loc is not None else Vector((0, -math.copysign(1, cen.y), 0))
                 mv = d_ * min(.35, (.16 - w))
-                m_ = o.matrix_world.copy(); m_.translation += mv; o.matrix_world = m_; bpy.context.view_layer.update(); P_ = P_ + np.array(mv); cen += mv
+                m_ = o.matrix_world.copy(); m_.translation += mv; o.matrix_world = m_; P_ = P_ + np.array(mv); cen += mv
                 sub, out, clr, st = _scan(P_, 100)
             _ins += 1; _done.add(o.name)
         else:
