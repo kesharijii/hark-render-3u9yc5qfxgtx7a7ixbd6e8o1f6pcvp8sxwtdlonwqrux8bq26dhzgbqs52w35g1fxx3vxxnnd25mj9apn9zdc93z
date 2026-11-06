@@ -2653,9 +2653,12 @@ def _bake(o):   # apply modifiers so vertex edits match what is exported
     if o.data.users > 1: o.data = o.data.copy()
     if o.modifiers:
         oe = o.evaluated_get(dg); me2 = bpy.data.meshes.new_from_object(oe); o.modifiers.clear(); o.data = me2
+import time as _tm
+_T0 = _tm.time(); _cut = False
 _off = []; _ext = []; _ins = 0; _proj = 0; _done = set()
 for o in list(bpy.data.objects):
     if not _interior(o): continue
+    if _tm.time() - _T0 > 1800: _cut = True; break
     try:
         P_ = _wverts(o)
         if len(P_) == 0: continue
@@ -2694,12 +2697,14 @@ for o in list(bpy.data.objects):
             me_.update(); _proj += 1; _done.add(o.name)
             print('MODEL v17b projected', o.name, nmov)
     except Exception as e: print('Error hullcheck', o.name, e)
-print('MODEL v17b outside-hull fix: inset', _ins, 'projected', _proj)
+print('MODEL v17b outside-hull fix: inset', _ins, 'projected', _proj, 'secs', round(_tm.time() - _T0), 'TIME-CUT' if _cut else '')
+_T1 = _tm.time()
 # final recount on the fixed scene (denser sampling)
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 _off = []; _low = []
 for o in list(bpy.data.objects):
     if not _interior(o) or o.name in _ext: continue
+    if _tm.time() - _T1 > 900: print('MODEL v17b recount TIME-CUT'); break
     try:
         P_ = _wverts(o)
         if len(P_) == 0: continue
