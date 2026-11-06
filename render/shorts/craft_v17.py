@@ -2163,7 +2163,10 @@ _nr = _rmp(('BlanketTank', 'TankRim', 'TankRib', 'FuelAsm', 'FuelCap', 'CtrlRod'
             'FieldCoil', 'FusionSolenoid', 'CorePlinth', 'CryoBase', 'HeatX', 'HXFin', 'Pump', 'Anim_PumpRotor', 'HotLeg', 'ColdLeg', 'Return', 'Grate',
             'CorePost', 'CoreRail', 'CoreHazard', 'EngDesk', 'EngMon', 'EngKeys', 'EngChair', 'Coolant1'))
 M_ROD2 = pbsdf('ControlRodDark', (.012, .012, .014), .6, .5)
-M_CHER2 = pbsdf('CherenkovDim', (.05, .2, .7), 0, .3, (.08, .35, 1), 1.0)
+M_CHER2 = pbsdf('FuelPinDark', (.03, .05, .09), .7, .4, (.05, .25, .9), .15)
+M_PLASMA2 = pbsdf('PlasmaMini', (.2, .45, 1), 0, .2, (.15, .45, 1), 12)
+M_PLASMAH2 = pbsdf('PlasmaMiniHalo', (.4, .3, 1), 0, .3, (.45, .25, 1), .8)
+M_RAILM = pbsdf('RailYellow', (.75, .5, .08), .6, .35)
 M_CAPG = glass('CoreCapsule', (.95, .98, 1), .0)
 PT = ZA + .95; CC = (EX, 0)
 Cyl('CorePedBase', (EX, 0, ZA + .04), .36, .08, M_ARCRIM, v=48); Cyl('CorePedestal', (EX, 0, (ZA + PT) / 2), .19, PT - ZA, M_THR, v=40)
@@ -2173,8 +2176,8 @@ def _sx(o, sx=1.4): o.scale = (sx, 1, 1); return o
 _sx(Cyl('MiniCoreBase', (EX, 0, PT + .025), .175, .05, M_ARCRIM, v=48))
 _sx(Cyl('MiniCoreCapsule', (EX, 0, PT + .05 + .13), .17, .26, M_CAPG, v=48))
 _sx(Tor('MiniCoreTopRim', (EX, 0, PT + .315), .17, .012, M_ARCRIM, ms=48, ns=8))
-_sx(Tor('MiniCorePlasma', (EX, 0, PT + .18), .075, .022, M_PLASMA, ms=48, ns=12), 1.3)
-_sx(Tor('MiniCoreHalo', (EX, 0, PT + .18), .075, .04, M_PLASMAH, ms=48, ns=12), 1.3)
+_sx(Tor('MiniCorePlasma', (EX, 0, PT + .18), .075, .022, M_PLASMA2, ms=48, ns=12), 1.3)
+_sx(Tor('MiniCoreHalo', (EX, 0, PT + .18), .075, .034, M_PLASMAH2, ms=48, ns=12), 1.3)
 for k in range(8):
     a = k * 2 * math.pi / 8; Tor(f'MiniFieldCoil{k}', (EX + 1.3 * .075 * math.cos(a), .075 * math.sin(a), PT + .18), .05, .005, M_COPPER, rot=(90, 0, math.degrees(a) + 90), ms=20, ns=6)
 for k in range(10):
@@ -2183,10 +2186,10 @@ for k in range(6):
     a = k * 2 * math.pi / 6; x_, y_ = EX + 1.4 * .125 * math.cos(a), .125 * math.sin(a)
     Cyl(f'MiniRod{k}', (x_, y_, PT + .2), .008, .24, M_ROD2, v=10); Box(f'MiniRodDrive{k}', (x_, y_, PT + .335), (.03, .03, .03), M_ROD2)
 Cyl('MiniSolenoid', (EX, 0, PT + .18), .022, .2, M_RIB, v=16)
-Tor('CoreHazardRing', (EX, 0, ZA + .01), .78, .04, M_AMBER, ms=48, ns=4)
+Tor('CoreHazardRing', (EX, 0, ZA + .01), .78, .04, M_RAILM, ms=48, ns=4)
 for k in range(8):
     a = k * math.pi / 4 + math.pi / 8; Cyl(f'CoreRailPost{k}', (EX + .95 * math.cos(a), .95 * math.sin(a), ZA + .5), .02, 1.0, M_RIB, v=10)
-Tor('CoreRailTop', (EX, 0, ZA + 1.0), .95, .022, M_AMBER, ms=64, ns=6); Tor('CoreRailMid', (EX, 0, ZA + .55), .95, .015, M_RIB, ms=64, ns=6)
+Tor('CoreRailTop', (EX, 0, ZA + 1.0), .95, .022, M_RAILM, ms=64, ns=6); Tor('CoreRailMid', (EX, 0, ZA + .55), .95, .015, M_RIB, ms=64, ns=6)
 xa = SEG['aft'][1][0] + .9
 for s in (-1, 1):
     pipe(f'CoreFeed{s}', [(EX, s * .2, ZA + .55), (EX - .5, s * .45, ZA + .2), (EX - 2.0, s * .6, ZA + .2), (xa + .72, s * .45, ZA + 1.1)], .045, M_COPPER)
@@ -2269,7 +2272,7 @@ SZ0 = ZA + 1.0; SZ1 = ZA + min(2.25, .82 * min(b_[2] for b_ in _b if b_)) if all
 szs = np.linspace(SZ0, SZ1, 14)
 V = []; UV = []
 for i, x in enumerate(sxs):
-    for j, z in enumerate(szs): V.append((float(x), rwall(float(x), float(z)), float(z))); UV.append((1 - i / (len(sxs) - 1), j / (len(szs) - 1)))
+    for j, z in enumerate(szs): V.append((float(x), rwall(float(x), float(z)), float(z))); UV.append((i / (len(sxs) - 1), j / (len(szs) - 1)))
 nz = len(szs); F = [(i * nz + j, i * nz + j + 1, (i + 1) * nz + j + 1, (i + 1) * nz + j) for i in range(len(sxs) - 1) for j in range(nz - 1)]
 o = mk('VitalsScreen', V, F, M_VIT); uvl = o.data.uv_layers.new(name='UVMap')
 for poly in o.data.polygons:
@@ -2342,20 +2345,21 @@ pbox('WsLampHead', 6.42, 146, ZG + 1.28, (.12, .12, .07), M_RIB); pbox('WsLampLe
 Area('WsTaskLight', pol(6.42, 146, ZG + 1.22), .1, 25, (1, .95, .85))
 # true-scale hand tools on the pegboard, each on its own hook
 TZ = ZG + 1.75
-def hook(nm, a, z): pbox(nm + 'Hook', 6.875, a, z, (.05, .01, .01), M_CHROME)
-pbox('WsHammerHandle', 6.88, 135.5, TZ - .1, (.03, .035, .3), M_WOOD); pbox('WsHammerHead', 6.88, 135.5, TZ + .06, (.03, .11, .03), M_RIB); hook('WsHammer', 135.5, TZ + .09)
+ann('WsPegBoard', 6.78, 6.81, 134, 170, ZG + 1.15, ZG + 2.15, M_LIND, step=1)
+def hook(nm, a, z): pbox(nm + 'Hook', 6.755, a, z, (.05, .01, .01), M_CHROME)
+pbox('WsHammerHandle', 6.770, 135.5, TZ - .1, (.03, .035, .3), M_WOOD); pbox('WsHammerHead', 6.770, 135.5, TZ + .06, (.03, .11, .03), M_RIB); hook('WsHammer', 135.5, TZ + .09)
 for k in range(4):
-    a = 137.5 + k * .55; pbox(f'WsDriverGrip{k}', 6.88, a, TZ - .02, (.028, .028, .1), (M_ORNG, M_RED, M_ORNG, M_RED)[k]); pbox(f'WsDriverShaft{k}', 6.88, a, TZ - .14, (.007, .007, .13 + k * .02), M_CHROME); hook(f'WsDriver{k}', a, TZ + .04)
+    a = 137.5 + k * .55; pbox(f'WsDriverGrip{k}', 6.770, a, TZ - .02, (.028, .028, .1), (M_ORNG, M_RED, M_ORNG, M_RED)[k]); pbox(f'WsDriverShaft{k}', 6.770, a, TZ - .14, (.007, .007, .13 + k * .02), M_CHROME); hook(f'WsDriver{k}', a, TZ + .04)
 for k in range(5):
-    a = 140.5 + k * .55; L_ = .14 + k * .025; pbox(f'WsWrench{k}', 6.885, a, TZ - L_ / 2, (.006, .022 + k * .003, L_), M_CHROME); hook(f'WsWrench{k}', a, TZ + .01)
-for e in (-6, 6): pbox(f'WsPliers{e}', 6.885, 144.2 + e * .03, TZ - .09, (.01, .018, .19), M_RED if e < 0 else M_CHROME, tilt=e)
+    a = 140.5 + k * .55; L_ = .14 + k * .025; pbox(f'WsWrench{k}', 6.775, a, TZ - L_ / 2, (.006, .022 + k * .003, L_), M_CHROME); hook(f'WsWrench{k}', a, TZ + .01)
+for e in (-6, 6): pbox(f'WsPliers{e}', 6.775, 144.2 + e * .03, TZ - .09, (.01, .018, .19), M_RED if e < 0 else M_CHROME, tilt=e)
 hook('WsPliers', 144.2, TZ + .02)
-pbox('WsSawBlade', 6.89, 148.5, TZ - .05, (.003, .36, .1), M_CHROME); pbox('WsSawHandle', 6.885, 147.0, TZ - .03, (.025, .1, .12), M_WOOD); hook('WsSaw', 148.5, TZ + .02)
-pbox('WsLevel', 6.885, 152.5, TZ - .03, (.025, .6, .045), M_ORNG); hook('WsLevel', 152.5, TZ + .005)
-pbox('WsSquare', 6.89, 156, TZ - .1, (.004, .03, .3), M_CHROME); pbox('WsSquareB', 6.89, 156.7, TZ - .235, (.004, .17, .03), M_CHROME); hook('WsSquare', 156, TZ + .06)
-pbox('WsTape', 6.875, 159, TZ - .05, (.04, .075, .075), M_AMBER); hook('WsTape', 159, TZ)
-for k in range(3): pbox(f'WsBin{k}', 6.84, 162 + k * 2.6, TZ - .05, (.12, .26, .12), (M_ORNG, M_CRATE, M_ORNG)[k])
-pbox('WsCableReel', 6.86, 167.5, TZ - .1, (.06, .26, .26), M_RIB); strip('WsReelCable', [pol(6.84, 167.5, TZ - .2), pol(6.84, 168.4, ZG + 1.2), pol(6.852, 168.8, ZG + 1.03)], M_CABLE, .006)
+pbox('WsSawBlade', 6.780, 148.5, TZ - .05, (.003, .36, .1), M_CHROME); pbox('WsSawHandle', 6.775, 147.0, TZ - .03, (.025, .1, .12), M_WOOD); hook('WsSaw', 148.5, TZ + .02)
+pbox('WsLevel', 6.775, 152.5, TZ - .03, (.025, .6, .045), M_ORNG); hook('WsLevel', 152.5, TZ + .005)
+pbox('WsSquare', 6.780, 156, TZ - .1, (.004, .03, .3), M_CHROME); pbox('WsSquareB', 6.780, 156.7, TZ - .235, (.004, .17, .03), M_CHROME); hook('WsSquare', 156, TZ + .06)
+pbox('WsTape', 6.765, 159, TZ - .05, (.04, .075, .075), M_AMBER); hook('WsTape', 159, TZ)
+for k in range(3): pbox(f'WsBin{k}', 6.730, 162 + k * 2.6, TZ - .05, (.12, .26, .12), (M_ORNG, M_CRATE, M_ORNG)[k])
+pbox('WsCableReel', 6.750, 167.5, TZ - .1, (.06, .26, .26), M_RIB); strip('WsReelCable', [pol(6.730, 167.5, TZ - .2), pol(6.730, 168.4, ZG + 1.2), pol(6.852, 168.8, ZG + 1.03)], M_CABLE, .006)
 # shop stool at working height (seat top ZG+0.68)
 Cyl('WsStoolSeat', pol(5.85, 143, ZG + .655), .17, .05, M_SEAT, v=24); Cyl('WsStoolPost', pol(5.85, 143, ZG + .33), .025, .6, M_CHROME)
 Cyl('WsStoolFoot', pol(5.85, 143, ZG + .02), .2, .03, M_RIB, v=24); Tor('WsStoolRing', pol(5.85, 143, ZG + .3), .15, .01, M_CHROME, ms=24, ns=6)
