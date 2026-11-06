@@ -734,7 +734,7 @@ for o in bpy.data.objects:
     if o.name.startswith('Thruster'):
         for k in range(5):  # cooling rings on the nozzles
             bpy.ops.mesh.primitive_torus_add(major_radius=o.dimensions.y / 2 * (.98 - k * .04), minor_radius=.035, location=o.location + Vector((-.6 + k * .3, 0, 0)), rotation=(0, math.radians(90), 0))
-            bpy.context.active_object.data.materials.append(M_GOLD if k == 0 else M_GRBD)
+            bpy.context.active_object.data.materials.append(M_GOLD if k == 0 else M_GRBD); bpy.context.active_object.name = f'ThrusterRing{o.name}_{k}'   # v17b: named (intended exterior)
 # --- detailed landing gear (piston, torque links, pad, hydraulic line) parented to existing pivots
 for i in range(3):
     piv = bpy.data.objects[f'GearPiv{i}']; base = piv.matrix_world.translation.copy()
@@ -1946,62 +1946,124 @@ _nk = carve_faces(hull, lambda P_: (rr_(P_) < KR - .03) & (P_[:, 2] < KT - .05) 
 for o in list(bpy.data.objects):
     if o.name.startswith(('Hull', 'Skylight', 'Dome')) or o == hull: continue
     if o.name.startswith('X'):
-        if t_keel(np.array([list(o.matrix_world.translation)]))[0] or (rr_(np.array([list(o.matrix_world.translation)]))[0] < KR + .1 and o.matrix_world.translation.z < KT): _rm(o)
+        if t_keel(np.array([list(o.matrix_world.translation)]))[0] or (rr_(np.array([list(o.matrix_world.translation)]))[0] < KR + 1.9 and o.matrix_world.translation.z < -.3): _rm(o)   # v17b: plates under the fillet too
         continue
     if o.type == 'MESH':
         try: _nk += carve_faces(o, t_keel)
         except Exception as e: print('Error keelcarve', o.name, e)
 print('MODEL v17 keel volume carved', _nk)
-prof_k = [(KR * math.cos(t) ** .5, KT - KD * math.sin(t) ** .5) for t in np.linspace(0, math.pi / 2, 16)]
-NA_ = 96; V = []; F = []
+# ---- v17b B1 fairing: the keel bay hull is one faired belly: superellipse bottom, vertical side at r KR, then a concave fillet
+#      that runs tangentially into whatever is above it (hull / blister / sponson underside), rim tucked 6 cm inside that skin.
+ENVB = bvh_of(['Hull', 'HallBlister', 'HallBlisterBelly'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')])
+def env_z(x, y):
+    h = ENVB.ray_cast(Vector((x, y, -14.0)), Vector((0, 0, 1)), 30.0)
+    return h[0].z if h[0] is not None and h[0].z < 1.5 else None
+NA_ = 120; FR0 = 1.0; RIMX = .55; CZ = 1.2
+_zE = []; _zR = []
 for j in range(NA_):
     a = 360 * j / NA_
-    for (r_, z_) in prof_k: V.append(pol(r_, a, z_))
-npk = len(prof_k)
+    p1 = pol(KR + FR0, a, 0); p2 = pol(KR + FR0 + RIMX, a, 0)
+    e1 = env_z(p1[0], p1[1]); e2 = env_z(p2[0], p2[1])
+    _zE.append(e1 if e1 is not None else -1.0); _zR.append(e2 if e2 is not None else (e1 if e1 is not None else -1.0))
+_zE = np.array(_zE); _zR = np.array(_zR)
+def _csm(v, k=7):
+    w = np.ones(k) / k; vv = np.concatenate([v[-k:], v, v[:k]]); return np.convolve(vv, w, 'same')[k:-k]
+zE_s = np.minimum(_csm(_zE), _zE + .25) + .03; zR_s = np.maximum(_csm(_zR), _zR) + .06
+V = []; F = []; FCOL = []
+NPRO = None
 for j in range(NA_):
-    for i in range(npk - 1):
-        a_, b_ = j * npk + i, ((j + 1) % NA_) * npk + i
-        c_ = [(V[a_][0] + V[b_ + 1][0]) / 2, (V[a_][1] + V[b_ + 1][1]) / 2]
-        if ramp_hole(c_[0], c_[1]) and V[a_][2] < KF - .05: continue
-        F.append((a_, a_ + 1, b_ + 1, b_))
-ks = mk('KeelShell', V, F, M_CHR, smooth=True); so_ = ks.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = 1
-Tor('KeelShellBand', (HC.x, HC.y, KT - .25), KR - .02, .04, M_ORNG, ms=96, ns=6)
-fk = polar_grid('KeelFloor', 0.0, 5.4, lambda r: KF, M_HFL, skip=ramp_hole, dr=.3, da=3.0)
+    a = 360 * j / NA_; zE = float(zE_s[j]); zR = float(max(zR_s[j], zE))
+    avail = zE - KB; Fr = float(np.clip(avail * .4, .35, FR0)); cz = float(min(CZ, avail - Fr - .05))
+    pro = []
+    for t in np.linspace(math.pi / 2 - .02, 0, 10): pro.append((KR * math.cos(t) ** .5, (KB + cz) - cz * math.sin(t) ** .5))
+    for zz in np.linspace(KB + cz, zE - Fr, 4)[1:]: pro.append((KR, float(zz)))
+    for ph in np.linspace(0, math.pi / 2, 9)[1:]: pro.append((KR + Fr - Fr * math.cos(ph), zE - Fr + Fr * math.sin(ph)))
+    pro.append((KR + FR0 + RIMX, zR))
+    NPRO = len(pro)
+    for (r_, z_) in pro: V.append(pol(r_, a, z_))
+for j in range(NA_):
+    for i in range(NPRO - 1):
+        a_, b_ = j * NPRO + i, ((j + 1) % NA_) * NPRO + i
+        F.append((a_, b_, b_ + 1, a_ + 1))          # outward normals (bottom faces point down)
+F.append(tuple(j * NPRO for j in range(NA_))[::-1])  # centre cap, normal down
+M_FAIR = hull.data.materials[0].copy(); M_FAIR.name = 'KeelFairingHull'; M_FAIR.use_backface_culling = False
+ks = mk('KeelFairing', V, F, M_FAIR, smooth=True)
+_ca = ks.data.color_attributes.new('Livery', 'FLOAT_COLOR', 'POINT')
+try:
+    from mathutils.kdtree import KDTree as _KDT
+    hl_ = hull.data.color_attributes.get('Livery'); nvh = len(hull.data.vertices)
+    hco = np.empty(nvh * 3, np.float32); hull.data.vertices.foreach_get('co', hco); hco = hco.reshape(-1, 3)
+    Mh = np.array(hull.matrix_world); hW = hco @ Mh[:3, :3].T + Mh[:3, 3]
+    hcol = np.empty(nvh * 4, np.float32); hl_.data.foreach_get('color', hcol); hcol = hcol.reshape(-1, 4)
+    sel = np.where((np.abs(hW[:, 0] - HC.x) < 13) & (np.abs(hW[:, 1]) < 13) & (hW[:, 2] < .5))[0]
+    kd = _KDT(len(sel))
+    for k_, i_ in enumerate(sel): kd.insert(hW[i_], k_)
+    kd.balance()
+    vc = []
+    for v_ in V:
+        _, k_, _ = kd.find(v_); c4 = hcol[sel[k_]].copy()
+        if v_[2] < KB + .6: c4[:3] = (.055, .06, .07)                       # flat bottom: plain livery char (no stray stripes)
+        vc.append(c4)
+    _ca.data.foreach_set('color', np.array(vc, np.float32).ravel())
+except Exception as e:
+    print('Error fairing colour', e); _ca.data.foreach_set('color', np.tile([.055, .06, .07, 1], len(V)).astype(np.float32))
+uvl_ = ks.data.uv_layers.new(name='UVMap')
+for poly in ks.data.polygons:
+    for li in poly.loop_indices: v_ = V[ks.data.loops[li].vertex_index]; uvl_.data[li].uv = (v_[0] / 20, v_[1] / 20)
+so_ = ks.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = -1
+print('MODEL v17b keel fairing: angles', NA_, 'profile pts', NPRO, 'fillet top z min/max', round(float(zE_s.min()), 2), round(float(zE_s.max()), 2), 'rim z', round(float(zR_s.min()), 2), round(float(zR_s.max()), 2))
+fk = polar_grid('KeelFloor', 0.0, 5.4, lambda r: KF, M_HFL, dr=.3, da=3.0)          # v17b: no ramp hole in the default (closed) state
 so_ = fk.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .15; so_.offset = -1
 for k, x in enumerate((RAMP_X0, RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .06)): Box(f'RampWellEdge{k}', (x, 0, KF + .005), (.05, 1.9, .01), M_AMBER)
-# ramp: hinged at the bay floor, 2.9 m at 27 deg, lands on the ground at -5.5
+# closed belly door outline (3 mm seam trim on the fairing underside)
+_dx0, _dx1 = RAMP_X0, RAMP_X0 + RAMP_L * math.cos(math.radians(RAMP_A)) + .06
+def _zbot(x, y):
+    r_ = math.hypot(x - HC.x, y - HC.y); c_ = min(1.0, (r_ / KR) ** 2); t_ = math.acos(c_); return (KB + CZ) - CZ * math.sin(t_) ** .5
+for nm_, c_, sz_ in (('A', (_dx0, 0), (.04, 1.94, .004)), ('B', (_dx1, 0), (.04, 1.94, .004)), ('C', ((_dx0 + _dx1) / 2, .95), (_dx1 - _dx0, .04, .004)), ('D', ((_dx0 + _dx1) / 2, -.95), (_dx1 - _dx0, .04, .004))):
+    Box(f'KeelDoorSeam{nm_}', (c_[0], c_[1], _zbot(c_[0], c_[1]) - .001), sz_, M_HD)
+# boarding ramp: EXTENDED state kept as hidden objects (BellyRampExt*), default = closed flush in the keel
 hx = RAMP_X0; ca_, sa_ = math.cos(math.radians(RAMP_A)), math.sin(math.radians(RAMP_A))
-Box('BellyRamp', (hx + ca_ * RAMP_L / 2, 0, KF - .05 - sa_ * RAMP_L / 2), (RAMP_L, 1.8, .1), M_HFL, rot=(0, RAMP_A, 0))
-for k in range(9): Box(f'BellyRampTread{k}', (hx + ca_ * (.25 + k * .3), 0, KF + .005 - sa_ * (.25 + k * .3)), (.05, 1.6, .02), M_HD, rot=(0, RAMP_A, 0))
+_ext = [Box('BellyRampExt', (hx + ca_ * RAMP_L / 2, 0, KF - .05 - sa_ * RAMP_L / 2), (RAMP_L, 1.8, .1), M_HFL, rot=(0, RAMP_A, 0))]
+for k in range(9): _ext.append(Box(f'BellyRampExtTread{k}', (hx + ca_ * (.25 + k * .3), 0, KF + .005 - sa_ * (.25 + k * .3)), (.05, 1.6, .02), M_HD, rot=(0, RAMP_A, 0)))
 for s in (1, -1):
-    Box(f'BellyRampRail{s}', (hx + ca_ * RAMP_L / 2, s * .86, KF + .1 - sa_ * RAMP_L / 2), (RAMP_L, .05, .22), M_STEEL, rot=(0, RAMP_A, 0))
-    Box(f'BellyRampLight{s}', (hx + ca_ * RAMP_L / 2, s * .8, KF + .02 - sa_ * RAMP_L / 2), (RAMP_L - .1, .02, .02), M_CYAN, rot=(0, RAMP_A, 0))
-    Cyl(f'BellyRampPiston{s}', (hx + .5, s * .95, KF - .35), .05, 1.0, M_STEEL, rot=(0, 90 - 35, 0), v=12)
-print('MODEL v17 ramp lower end z', round(KF - sa_ * RAMP_L, 2))
-# straight stair up to the off-centre hatch (16 risers, 0.2 m)
+    _ext.append(Box(f'BellyRampExtRail{s}', (hx + ca_ * RAMP_L / 2, s * .86, KF + .1 - sa_ * RAMP_L / 2), (RAMP_L, .05, .22), M_STEEL, rot=(0, RAMP_A, 0)))
+    _ext.append(Box(f'BellyRampExtLight{s}', (hx + ca_ * RAMP_L / 2, s * .8, KF + .02 - sa_ * RAMP_L / 2), (RAMP_L - .1, .02, .02), M_CYAN, rot=(0, RAMP_A, 0)))
+    _ext.append(Cyl(f'BellyRampExtPiston{s}', (hx + .5, s * .95, KF - .35), .05, 1.0, M_STEEL, rot=(0, 90 - 35, 0), v=12))
+for o in _ext: o.hide_render = True; o.hide_viewport = True
+print('MODEL v17 ramp lower end z', round(KF - sa_ * RAMP_L, 2), '(extended state hidden; default closed)')
+# straight stair up to the off-centre hatch (16 risers, 0.2 m); v17b: everything stays below the closed hatch leaves
 HX0, HX1, HHW = -7.2, -4.6, .65
 SX0_ = -8.2; NSR = 16; srise = (Z0 - KF) / NSR; srun = (HX1 - SX0_) / NSR
-for k in range(NSR):
+def _tread(x): return KF + (x - SX0_) / (HX1 - SX0_) * (Z0 - KF)
+for k in range(NSR - 1):                      # the last riser lands on the hall floor edge itself
     zt = KF + (k + 1) * srise; x0 = SX0_ + k * srun
     Box(f'KeelStairTread{k:02d}', (x0 + srun / 2, 0, zt - .025), (srun + .02, 1.1, .05), M_HFL)
     Box(f'KeelStairNose{k:02d}', (x0 + .02, 0, zt + .003), (.03, 1.0, .006), M_CYAN)
-sl = math.hypot(HX1 - SX0_, Z0 - KF); sang = math.degrees(math.atan2(Z0 - KF, HX1 - SX0_))
+sang = math.degrees(math.atan2(Z0 - KF, HX1 - SX0_)); cs_ = math.cos(math.radians(sang))
+_sa, _sb = SX0_ + .3, HX1 - .25
+XR_END = SX0_ + (Z0 - .17 - .87 - KF) / (Z0 - KF) * (HX1 - SX0_)      # rail top stays >= 0.15 m below the hall floor
 for s in (1, -1):
-    Box(f'KeelStairStringer{s}', ((SX0_ + HX1) / 2, s * .58, (KF + Z0) / 2 - .1), (sl, .05, .3), M_STEEL, rot=(0, -sang, 0))
-    Box(f'KeelStairRail{s}', ((SX0_ + HX1) / 2, s * .6, (KF + Z0) / 2 + .85), (sl, .04, .04), M_HD, rot=(0, -sang, 0))
-    for k in range(5):
-        xx = SX0_ + .3 + k * (HX1 - SX0_ - .6) / 4; zz = KF + (xx - SX0_) / (HX1 - SX0_) * (Z0 - KF)
-        Box(f'KeelStairPost{s}{k}', (xx, s * .6, zz + .45), (.03, .03, .9), M_STEEL)
-# two-leaf armoured sliding hatch (leaves slide sideways into the floor slab: closed 1-150, open 175+), emblem, glowing seam
+    xm = (_sa + _sb) / 2; Box(f'KeelStairStringer{s}', (xm, s * .58, _tread(xm) - .2), ((_sb - _sa) / cs_, .05, .3), M_STEEL, rot=(0, -sang, 0))
+    xm = (SX0_ + XR_END) / 2; Box(f'KeelStairRail{s}', (xm, s * .6, _tread(xm) + .85), ((XR_END - SX0_) / cs_, .04, .04), M_HD, rot=(0, -sang, 0))
+    for k, xx in enumerate(np.linspace(SX0_ + .3, XR_END - .12, 4)):
+        xx = float(xx); Box(f'KeelStairPost{s}{k}', (xx, s * .6, _tread(xx) + .45), (.03, .03, .9), M_STEEL)
+print('MODEL v17b stair rails end x', round(XR_END, 2), 'rail top z', round(_tread(XR_END) + .87, 2), 'hall floor', Z0)
+# two-leaf armoured sliding hatch: gunmetal armour plate with a livery-orange border, dark ribs, glowing cyan seam, gold emblem
+M_HATCH = pbsdf('HatchArmourPlate', (.16, .17, .19), .85, .34)
 for s in (1, -1):
     h = piv(f'Anim_HatchLeaf{s}', ((HX0 + HX1) / 2, s * HHW / 2, Z0 - .05))
-    att(Box(f'HatchLeaf{s}', ((HX0 + HX1) / 2, s * HHW / 2, Z0 - .05), (HX1 - HX0 - .02, HHW - .01, .09), M_STEEL), h)
-    for k in range(4): att(Box(f'HatchArmour{s}{k}', (HX0 + .35 + k * .63, s * HHW / 2, Z0 - .003), (.08, HHW - .12, .012), M_HD), h)
-    att(Box(f'HatchSeam{s}', ((HX0 + HX1) / 2, s * .012, Z0 - .004), (HX1 - HX0 - .06, .02, .01), M_CYAN), h)
-    att(Cyl(f'HatchEmblem{s}', ((HX0 + HX1) / 2, s * .2, Z0 - .002), .17, .01, M_GOLD, v=32), h)
+    lw, lh = HX1 - HX0 - .02, HHW - .01; cy_ = s * HHW / 2
+    att(Box(f'HatchLeaf{s}', ((HX0 + HX1) / 2, cy_, Z0 - .05), (lw, lh, .09), M_HATCH), h)
+    for nm_, c_, sz_ in (('X0', (HX0 + .035, cy_), (.05, lh - .02, .006)), ('X1', (HX1 - .035, cy_), (.05, lh - .02, .006)),
+                         ('Y0', ((HX0 + HX1) / 2, cy_ + lh / 2 - .035), (lw - .02, .05, .006)), ('Y1', ((HX0 + HX1) / 2, cy_ - lh / 2 + .035), (lw - .02, .05, .006))):
+        att(Box(f'HatchTrim{s}{nm_}', (c_[0], c_[1], Z0 - .003), sz_, M_ORNG), h)
+    for k in range(4): att(Box(f'HatchArmour{s}{k}', (HX0 + .35 + k * .63, cy_, Z0 - .004), (.08, HHW - .16, .008), M_HD), h)
+    att(Box(f'HatchSeam{s}', ((HX0 + HX1) / 2, s * .012, Z0 - .004), (HX1 - HX0 - .06, .02, .008), M_CYAN), h)
+    att(Cyl(f'HatchEmblem{s}', ((HX0 + HX1) / 2, s * .2, Z0 - .004), .17, .008, M_GOLD, v=32), h)
     h.location.y = s * HHW / 2; h.keyframe_insert('location', frame=150); h.location.y = s * (HHW / 2 + HHW); h.keyframe_insert('location', frame=175)
-for (x_, sy_) in ((HX0, None), (HX1, None)): Box(f'HatchFrameX{x_}', (x_, 0, Z0 + .003), (.06, 2 * HHW + .1, .008), M_AMBER)
-for s in (1, -1): Box(f'HatchFrameY{s}', ((HX0 + HX1) / 2, s * (HHW + .02), Z0 + .003), (HX1 - HX0, .04, .008), M_AMBER)
+    for fc in (h.animation_data.action.fcurves if h.animation_data and h.animation_data.action else []): fc.extrapolation = 'CONSTANT'
+for (x_, sy_) in ((HX0, None), (HX1, None)): Box(f'HatchFrameX{x_}', (x_, 0, Z0 - .004), (.06, 2 * HHW + .1, .008), M_AMBER)
+for s in (1, -1): Box(f'HatchFrameY{s}', ((HX0 + HX1) / 2, s * (HHW + .02), Z0 - .004), (HX1 - HX0, .04, .008), M_AMBER)
 for s in (1, -1): Box(f'HatchWell{s}', ((HX0 + HX1) / 2, s * (HHW + .02), Z0 - .3), (HX1 - HX0, .04, .6), M_HD)
 # artillery racks + loader (port side), storage (starboard), lights, lift pillar under the holo table
 M_MSL = pbsdf('Ordnance', (.55, .57, .6), .7, .3)
@@ -2203,6 +2265,121 @@ print('MODEL v17 mini core removed', _nr, 'pedestal top', round(PT, 2), 'core 0.
 except Exception:
     import traceback; print("Error phase C2"); traceback.print_exc()
 try:
+    # ---- v17b C2b. REACTOR ROOM SHELL: one continuous lining + floor fitted to the hull (ray cast, >= 0.25 m inside the skin)
+    XA0 = float(SEG['aft'][1][0]); XA1 = XSB + .04
+    RXS = np.arange(XA0, XA1 + 1e-6, .25); RXS[-1] = XA1
+    NPH = 72; PHS = np.radians(np.arange(NPH) * 360.0 / NPH)
+    ZRC = ZA + 1.6
+    def _old_d(x, ph):
+        s_ = seg_at(x)
+        if not s_: return 3.0
+        zf, a, b = s_; c, sn = math.cos(ph), math.sin(ph); t = 0.0
+        for t in np.arange(.05, 6.0, .03):
+            y, z = t * c, ZRC + t * sn
+            if z < zf - .3 or abs(y) > a or z > zprof(a, b, zf, y): return float(t)
+        return 6.0
+    DH = np.zeros((len(RXS), NPH)); DO = np.zeros((len(RXS), NPH))
+    for i, x in enumerate(RXS):
+        for j, ph in enumerate(PHS):
+            h = hdist((float(x), 0, ZRC), (0, math.cos(ph), math.sin(ph)), 8.0)
+            DH[i, j] = h if h is not None else 6.0; DO[i, j] = _old_d(float(x), ph)
+    D = np.minimum(DH - .3, DO + .05)
+    for _ in range(2):
+        Dp = np.concatenate([D[:, -2:], D, D[:, :2]], 1); D = sum(Dp[:, k:k + NPH] for k in range(5)) / 5
+        Dq = np.concatenate([D[:1], D[:1], D, D[-1:], D[-1:]], 0); D = sum(Dq[k:k + len(RXS)] for k in range(5)) / 5
+    D = np.clip(np.minimum(D, DH - .27), .5, 5.5)
+    SECT = []          # per station: list of (y, z), z clamped to the floor, with floor points kept inside the wall crossing
+    for i in range(len(RXS)):
+        pts = [(D[i, j] * math.cos(PHS[j]), ZRC + D[i, j] * math.sin(PHS[j])) for j in range(NPH)]
+        ycr = {1: 0.0, -1: 0.0}
+        for j in range(NPH):
+            (y0, z0), (y1, z1) = pts[j], pts[(j + 1) % NPH]
+            if (z0 - ZA) * (z1 - ZA) <= 0 and z0 != z1:
+                yc = y0 + (ZA - z0) / (z1 - z0) * (y1 - y0); s_ = 1 if yc > 0 else -1; ycr[s_] = max(ycr[s_], abs(yc))
+        q = []
+        for (y, z) in pts:
+            if z < ZA: z = ZA; s_ = 1 if y > 0 else -1; y = s_ * min(abs(y), ycr[s_])
+            q.append((y, z))
+        SECT.append(q)
+    V = []; F = []; FI = []
+    for i, x in enumerate(RXS):
+        for (y, z) in SECT[i]: V.append((float(x), y, z))
+    for i in range(len(RXS) - 1):
+        for j in range(NPH):
+            a_, b_ = i * NPH + j, i * NPH + (j + 1) % NPH; c_, d_ = a_ + NPH, b_ + NPH
+            F.append((a_, c_, d_, b_))                                   # normals face the room
+            FI.append(1 if max(V[a_][2], V[b_][2], V[c_][2], V[d_][2]) < ZA + .01 else 0)
+    # aft end wall (fan) and forward ring wall around the shield slab
+    ca0 = len(V); V.append((float(RXS[0]), 0.0, ZRC))
+    for j in range(NPH): F.append((ca0, j, (j + 1) % NPH)); FI.append(0)
+    rsh = mk('ReactorShell', V, F, M_LIN, mats=[M_FLOOR], fidx=FI, smooth=False)
+    me_ = rsh.data; me_.validate(); so_ = rsh.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .05; so_.offset = -1
+    raise_mpl = False
+except Exception:
+    import traceback; print('Error reactor shell'); traceback.print_exc(); raise_mpl = None
+try:
+    if raise_mpl is not None:
+        # forward ring wall at the shield's aft face: section polygon minus the shield slab rectangle (|y|<2.85, z<4.25)
+        q = SECT[-1]; Vf = []; Ff = []; st = .05
+        def _inpoly(y, z, poly):
+            c = False; n = len(poly)
+            for k in range(n):
+                (y0, z0), (y1, z1) = poly[k], poly[(k + 1) % n]
+                if (z0 > z) != (z1 > z) and y < (y1 - y0) * (z - z0) / (z1 - z0) + y0: c = not c
+            return c
+        ys_ = np.arange(-5.5, 5.5, st); zs_ = np.arange(ZA, ZA + 5.0, st)
+        for y in ys_:
+            for z in zs_:
+                yc, zc = y + st / 2, z + st / 2
+                if abs(yc) < 2.85 and zc < 4.25: continue
+                if not _inpoly(yc, zc, q): continue
+                b = len(Vf); Vf += [(XA1, y, z), (XA1, y + st, z), (XA1, y + st, z + st), (XA1, y, z + st)]; Ff.append((b, b + 1, b + 2, b + 3))
+        if Ff:
+            fw = mk('ReactorShellFwd', Vf, Ff, M_LIN); bm = bmesh.new(); bm.from_mesh(fw.data); bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=.001); bm.to_mesh(fw.data); bm.free()
+        # ribs every 1.6 m on the new section (panelling rhythm of the hall/corridor frames)
+        for xr in np.arange(XA0 + .9, XA1 - .4, 1.6):
+            i = int(np.argmin(np.abs(RXS - xr))); q = SECT[i]; Vr = []; Fr = []
+            ring = [(y, z) for (y, z) in q]
+            for k, (y, z) in enumerate(ring):
+                dy, dz = -y, ZRC - z; l = math.hypot(dy, dz) or 1; yi, zi = y + dy / l * .09, z + dz / l * .09
+                Vr += [(float(RXS[i]) - .06, y, z), (float(RXS[i]) + .06, y, z), (float(RXS[i]) + .06, yi, zi), (float(RXS[i]) - .06, yi, zi)]
+            n = len(ring)
+            for k in range(n):
+                a0, a1 = 4 * k, 4 * ((k + 1) % n)
+                if ring[k][1] < ZA + .01 and ring[(k + 1) % n][1] < ZA + .01: continue
+                Fr += [(a0 + 3, a1 + 3, a1 + 2, a0 + 2), (a0, a1, a1 + 3, a0 + 3), (a0 + 1, a0 + 2, a1 + 2, a1 + 1)]
+            mk(f'ReactorRib{xr:.1f}', Vr, Fr, M_RIB)
+        # retire the old aft lining / deck / frames inside the room
+        _ro = 0
+        for nm_ in ('LiningAft', 'DeckAft'):
+            o = bpy.data.objects.get(nm_)
+            if o: _ro += carve_faces(o, lambda P_: P_[:, 0] < XA1 + .02)
+        for o in list(bpy.data.objects):
+            if o.name.startswith('Frame') and o.type in ('MESH', 'CURVE'):
+                bb_ = np.array([list(o.matrix_world @ Vector(c)) for c in o.bound_box])
+                if bb_[:, 0].max() < XA1 + .1: _rm(o); _ro += 1
+        def shell_y(x, s, z):
+            i = int(np.clip(np.searchsorted(RXS, x), 1, len(RXS) - 1)); t = (x - RXS[i - 1]) / (RXS[i] - RXS[i - 1]); out = []
+            for k in (i - 1, i):
+                pts = sorted([(zz, abs(yy)) for (yy, zz) in SECT[k] if (yy > 0) == (s > 0) and zz > ZA + .01 and abs(yy) > .05])
+                out.append(float(np.interp(z, [p[0] for p in pts], [p[1] for p in pts])) if pts else 2.0)
+            return s * ((1 - t) * out[0] + t * out[1])
+        def shell_top(x, y):
+            i = int(np.argmin(np.abs(RXS - x))); pts = sorted([(yy, zz) for (yy, zz) in SECT[i] if zz > ZRC])
+            return float(np.interp(y, [p[0] for p in pts], [p[1] for p in pts]))
+        _nl = 0
+        for o in bpy.data.objects:
+            if o.type == 'LIGHT' and XA0 < o.location.x < XA1 and abs(o.location.y) < 4.5 and o.parent is None:
+                zt = shell_top(o.location.x, o.location.y)
+                if o.location.z > zt - .12: o.location.z = zt - .18; _nl += 1
+        print('MODEL v17b reactor shell x', round(XA0, 2), round(XA1, 2), 'stations', len(RXS), 'min hull clearance', round(float((DH - D).min()), 2),
+              'half-width @ZA+1.2', [(round(float(x), 1), round(shell_y(float(x), 1, ZA + 1.2), 2), round(shell_y(float(x), -1, ZA + 1.2), 2)) for x in (-22, -19, -16, -13)],
+              'top', [(round(float(x), 1), round(shell_top(float(x), 0), 2)) for x in (-22, -16, -13)], 'old removed', _ro, 'lights lowered', _nl)
+except Exception:
+    import traceback; print('Error reactor shell 2'); traceback.print_exc()
+if 'shell_y' not in globals():
+    def shell_y(x, s, z): return outer_y(x, s, z)
+try:
     exec(compile(r"""# ---- C3. REACTOR ROOM: curved vitals screen on the port wall (x -19..-13), wall-fixed desks under it, flush wall computers starboard
 VW, VH = 2048, 512
 F5 = {
@@ -2265,7 +2442,7 @@ ti = nt_.nodes.new('ShaderNodeTexImage'); ti.image = img_
 nt_.links.new(ti.outputs['Color'], pv.inputs['Base Color']); nt_.links.new(ti.outputs['Color'], pv.inputs['Emission Color'])
 pv.inputs['Emission Strength'].default_value = 3.0; pv.inputs['Roughness'].default_value = .25
 SX0, SX1 = -19.0, -13.0
-def rwall(x, z): return abs(outer_y(x, 1, z)) - .14
+def rwall(x, z): return abs(shell_y(x, 1, z)) - .14
 sxs = np.linspace(SX0, SX1, 48)
 _b = [seg_at(float(x)) for x in sxs]
 SZ0 = ZA + 1.0; SZ1 = ZA + min(2.25, .82 * min(b_[2] for b_ in _b if b_)) if all(_b) else ZA + 2.1
@@ -2278,22 +2455,22 @@ o = mk('VitalsScreen', V, F, M_VIT); uvl = o.data.uv_layers.new(name='UVMap')
 for poly in o.data.polygons:
     for li in poly.loop_indices: uvl.data[li].uv = UV[o.data.loops[li].vertex_index]
 o.data.polygons.foreach_set('use_smooth', [True] * len(o.data.polygons))
-wstrip('VitalsBezelTop', sxs, 1, SZ1, SZ1 + .05, .1, .2, M_RIB, lambda x, z: abs(outer_y(x, 1, SZ1)))
-wstrip('VitalsBezelBot', sxs, 1, SZ0 - .05, SZ0, .1, .2, M_RIB, lambda x, z: abs(outer_y(x, 1, SZ0)))
+wstrip('VitalsBezelTop', sxs, 1, SZ1, SZ1 + .05, .1, .2, M_RIB, lambda x, z: abs(shell_y(x, 1, SZ1)))
+wstrip('VitalsBezelBot', sxs, 1, SZ0 - .05, SZ0, .1, .2, M_RIB, lambda x, z: abs(shell_y(x, 1, SZ0)))
 dxs = np.linspace(SX0 + .3, SX1 - .3, 40)
-wstrip('ReactorDeskTop', dxs, 1, ZA + .72, ZA + .76, .12, .72, M_SEAT, lambda x, z: abs(outer_y(x, 1, ZA + .74)))
-wstrip('ReactorDeskEdge', dxs, 1, ZA + .69, ZA + .76, .7, .73, M_CYAN, lambda x, z: abs(outer_y(x, 1, ZA + .74)))
-wstrip('ReactorDeskModesty', dxs, 1, ZA + .3, ZA + .72, .12, .16, M_RIB, lambda x, z: abs(outer_y(x, 1, ZA + .5)))
+wstrip('ReactorDeskTop', dxs, 1, ZA + .72, ZA + .76, .12, .72, M_SEAT, lambda x, z: abs(shell_y(x, 1, ZA + .74)))
+wstrip('ReactorDeskEdge', dxs, 1, ZA + .69, ZA + .76, .7, .73, M_CYAN, lambda x, z: abs(shell_y(x, 1, ZA + .74)))
+wstrip('ReactorDeskModesty', dxs, 1, ZA + .3, ZA + .72, .12, .16, M_RIB, lambda x, z: abs(shell_y(x, 1, ZA + .5)))
 for k, x in enumerate(np.linspace(SX0 + .5, SX1 - .5, 6)):
-    x = float(x); yw = abs(outer_y(x, 1, ZA + .6))
+    x = float(x); yw = abs(shell_y(x, 1, ZA + .6))
     Box(f'ReactorDeskBracket{k}', (x, yw - .4, ZA + .62), (.05, .55, .18), M_RIB, rot=(-18, 0, 0))
 for k, x in enumerate((-18.0, -16.0, -14.0)):
-    yw = abs(outer_y(x, 1, ZA + .76))
+    yw = abs(shell_y(x, 1, ZA + .76))
     Box(f'ReactorKeys{k}', (x, yw - .42, ZA + .77), (.45, .16, .015), M_GRIP); Box(f'ReactorTrack{k}', (x + .32, yw - .42, ZA + .77), (.09, .07, .01), M_GRIP)
     Cyl(f'ReactorStoolSeat{k}', (x, yw - 1.05, ZA + .66), .17, .05, M_SEAT, v=24); Cyl(f'ReactorStoolPost{k}', (x, yw - 1.05, ZA + .33), .025, .6, M_CHROME)
     Cyl(f'ReactorStoolFoot{k}', (x, yw - 1.05, ZA + .02), .2, .03, M_RIB, v=24)
 for k, x in enumerate((-18.3, -16.4, -14.5)):   # flush computers in the starboard wall
-    yw = -abs(outer_y(x, -1, ZA + 1.35))
+    yw = -abs(shell_y(x, -1, ZA + 1.35))
     Box(f'WallPCFrame{k}', (x, yw + .025, ZA + 1.25), (1.0, .05, 1.1), M_RIB)
     Box(f'WallPCScreen{k}', (x, yw + .052, ZA + 1.42), (.86, .01, .52), M_SCR if k != 1 else M_SCR2)
     Box(f'WallPCKeys{k}', (x, yw + .052, ZA + .98), (.6, .01, .16), M_GRIP)
@@ -2414,46 +2591,101 @@ print('MODEL v17 h5 panes rebuilt (old', len(_lg), ')')
 """, "phase_C6", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C6"); traceback.print_exc()
-# ---- A4. outside-hull check: interior objects (centre inside the shell) must not poke through hull / blister / keel / sponsons
-SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelShell', 'SkylightGlass'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
+# ---- A4 (v17b). strict outside-hull check: every interior vertex is tested against the outer shell
+#      (14-direction escape rays + closest-point normal sign), then fixed: small parts are inset to >= 0.15 m clearance,
+#      large parts (linings, floors, frames) have their offending vertices pulled 0.08 m inside the skin.
+SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelFairing', 'SkylightGlass'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 SB = bvh_of(SHELL)
-DIRS = [Vector(d) for d in ((0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))]
-def outside_pts(P_):
-    out = np.zeros(len(P_), bool)
-    for i, p in enumerate(P_):
-        miss = 0
-        for d in DIRS:
-            if SB.ray_cast(Vector(p), d, 40.0)[0] is None: miss += 1
-        out[i] = miss >= 2
-    return out
-EXT_PFX = ('Hull', 'X', 'Nav', 'Strobe', 'Thruster', 'Exhaust', 'Plume', 'Winglet', 'Strake', 'Keel', 'BellyRamp', 'Pad', 'Skylight', 'HoloTable_raised', 'NozL')
-_off = []; _fix = 0
+D14 = [Vector(v).normalized() for v in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1), (1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1))]
+def _esc(P):
+    n = 0
+    for d in D14:
+        if SB.ray_cast(P, d, 80.0)[0] is None: n += 1
+    return n
+def pstate(p):
+    P = Vector(p); loc, nrm, _, dist = SB.find_nearest(P, 4.0)
+    if loc is None: return (_esc(P) >= 3), 4.0, None, None
+    if dist > .6: return (_esc(P) >= 3), dist, loc, nrm
+    e = _esc(P)
+    out = e >= 3 or (e >= 1 and (P - loc).dot(nrm) > .005)
+    return out, (-dist if out else dist), loc, nrm
+EXT_PFX = ('Hull', 'X', 'Nav', 'Strobe', 'Thruster', 'Exhaust', 'Plume', 'Winglet', 'Strake', 'KeelFairing', 'KeelDoorSeam', 'Pad', 'Skylight', 'NozL', 'BellyRampExt')
+def _interior(o):
+    return (o.type == 'MESH' and not o.hide_render and not o.name.startswith(EXT_PFX) and o.name not in SHELL
+            and not o.name.endswith(('Sponson', 'SponsonCut', 'SponsonWinCut', 'SponsonStripe')) and o.name not in SIDE_CUTTERS)
+def _wverts(o):
+    oe = o.evaluated_get(dg); me_ = oe.to_mesh(); n_ = len(me_.vertices)
+    c_ = np.empty(n_ * 3, np.float32); me_.vertices.foreach_get('co', c_); oe.to_mesh_clear()
+    Mw = np.array(o.matrix_world); return c_.reshape(-1, 3) @ Mw[:3, :3].T + Mw[:3, 3]
+def _scan(P_, cap=160):
+    sub = P_[:: max(1, len(P_) // cap)]; st = [pstate(p) for p in sub]
+    return sub, np.array([s_[0] for s_ in st], bool), np.array([s_[1] for s_ in st]), st
+def _bake(o):   # apply modifiers so vertex edits match what is exported
+    if o.data.users > 1: o.data = o.data.copy()
+    if o.modifiers:
+        oe = o.evaluated_get(dg); me2 = bpy.data.meshes.new_from_object(oe); o.modifiers.clear(); o.data = me2
+_off = []; _ext = []; _ins = 0; _proj = 0; _done = set()
 for o in list(bpy.data.objects):
-    if o.type != 'MESH' or o.name.startswith(EXT_PFX) or o.name in SHELL or o.name.endswith(('Sponson', 'SponsonCut', 'SponsonWinCut', 'SponsonStripe')): continue
+    if not _interior(o): continue
     try:
-        me_ = o.data; n_ = len(me_.vertices)
-        if n_ == 0: continue
-        c_ = np.empty(n_ * 3, np.float32); me_.vertices.foreach_get('co', c_); c_ = c_.reshape(-1, 3)
-        Mw = np.array(o.matrix_world); P_ = c_ @ Mw[:3, :3].T + Mw[:3, 3]
-        cen = P_.mean(0)
-        if outside_pts([cen])[0]: continue                      # exterior part
-        sub = P_[:: max(1, n_ // 120)]
-        out = outside_pts(sub)
-        if not out.any(): continue
-        dim = (P_.max(0) - P_.min(0)).max()
-        if dim < 1.5 and out.mean() <= .5:
-            moved = False
-            for step in range(1, 9):
-                dy = -math.copysign(.05 * step, cen[1]) if abs(cen[1]) > .3 else 0.0
-                dz = .05 * step if (sub[out][:, 2].mean() < cen[2]) else -.05 * step
-                if not outside_pts(sub + np.array([0, dy, dz * (0 if dy else 1)])).any():
-                    o.location.y += dy; o.location.z += dz * (0 if dy else 1); moved = True; break
-            if moved: _fix += 1; continue
-        _off.append((o.name, round(float(out.mean()), 2), round(float(dim), 2), np.round(P_.min(0), 2).tolist(), np.round(P_.max(0), 2).tolist(), np.round(sub[out][:3], 2).tolist()))
+        P_ = _wverts(o)
+        if len(P_) == 0: continue
+        bb = np.array([P_.min(0), P_.max(0)]); dim = float((bb[1] - bb[0]).max())
+        corners = np.array([[bb[i][0], bb[j][1], bb[k][2]] for i in (0, 1) for j in (0, 1) for k in (0, 1)])
+        cs = [pstate(c) for c in corners]
+        if all((not s_[0]) and s_[1] > .45 for s_ in cs): continue          # bbox fully inside with margin
+        sub, out, clr, st = _scan(P_)
+        if out.all() and len(sub) > 3: _ext.append(o.name); continue        # wholly outside: an exterior part
+        cen = Vector(P_.mean(0))
+        if dim < 2.0:
+            if clr.min() >= .15: continue
+            for it in range(10):
+                k = int(np.argmin(clr)); w = clr[k]
+                if w >= .15: break
+                loc = st[k][2]
+                d_ = (cen - loc).normalized() if loc is not None else Vector((0, -math.copysign(1, cen.y), 0))
+                mv = d_ * min(.35, (.16 - w))
+                m_ = o.matrix_world.copy(); m_.translation += mv; o.matrix_world = m_; bpy.context.view_layer.update(); P_ = P_ + np.array(mv); cen += mv
+                sub, out, clr, st = _scan(P_, 100)
+            _ins += 1; _done.add(o.name)
+        else:
+            if not (out.any() or clr.min() < .05): continue
+            _bake(o); me_ = o.data; Mw = o.matrix_world; Mi = Mw.inverted(); nmov = 0
+            for v in me_.vertices:
+                p = Mw @ v.co; loc, nrm, _, dist = SB.find_nearest(p, 4.0)
+                if loc is None or dist > .6: continue
+                ok_, c_, _, _ = pstate(p)
+                if (not ok_) and c_ >= .05: continue
+                best = None
+                for sg in (1, -1):
+                    q = loc + nrm * (sg * .08)
+                    if not pstate(q)[0]: best = q; break
+                if best is None: best = p + (cen - p).normalized() * min(.5, dist + .08)
+                v.co = Mi @ best; nmov += 1
+            me_.update(); _proj += 1; _done.add(o.name)
+            print('MODEL v17b projected', o.name, nmov)
     except Exception as e: print('Error hullcheck', o.name, e)
-print('MODEL v17 outside-hull: auto-inset', _fix, 'offenders', len(_off))
-for t in sorted(_off, key=lambda t: -t[1])[:60]: print('MODEL v17 OFFENDER', t)
+print('MODEL v17b outside-hull fix: inset', _ins, 'projected', _proj)
+# final recount on the fixed scene (denser sampling)
+bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
+_off = []; _low = []
+for o in list(bpy.data.objects):
+    if not _interior(o) or o.name in _ext: continue
+    try:
+        P_ = _wverts(o)
+        if len(P_) == 0: continue
+        bb = np.array([P_.min(0), P_.max(0)]); dim = float((bb[1] - bb[0]).max())
+        corners = np.array([[bb[i][0], bb[j][1], bb[k][2]] for i in (0, 1) for j in (0, 1) for k in (0, 1)])
+        if all((not s_[0]) and s_[1] > .45 for s_ in (pstate(c) for c in corners)): continue
+        sub, out, clr, st = _scan(P_, 400)
+        if out.any(): _off.append((o.name, round(float(out.mean()), 3), round(float(-clr.min()), 3), np.round(bb[0], 2).tolist(), np.round(bb[1], 2).tolist(), np.round(sub[out][:2], 2).tolist()))
+        elif dim < 2.0 and clr.min() < .15: _low.append((o.name, round(float(clr.min()), 3)))
+    except Exception as e: print('Error hullcheck2', o.name, e)
+print('MODEL v17 outside-hull: offenders', len(_off), 'small parts under 0.15 m clearance', len(_low), 'exterior parts', len(_ext))
+for t in sorted(_off, key=lambda t: -t[2])[:80]: print('MODEL v17 OFFENDER', t)
+for t in sorted(_low, key=lambda t: t[1])[:40]: print('MODEL v17b LOWCLEAR', t)
+print('MODEL v17b EXTERIOR', sorted(set(n.rstrip('.0123456789') for n in _ext))[:80])
 print('MODEL v17 pass done')
 
 # ------------------------------------------------------------------ world, camera, render
@@ -2529,8 +2761,12 @@ def export_glbs():
     for o in bpy.context.selected_objects: o.select_set(False)
     for o in inner: o.select_set(True)
     pass
+    _hid = 0
     for o in bpy.data.objects:
-        if o.type in ('MESH', 'EMPTY') and o.name not in hide: o.select_set(True)
+        if o.type in ('MESH', 'EMPTY') and o.name not in hide:
+            if o.hide_render or o.hide_viewport: _hid += 1; continue          # v17b: alternate states (raised holo table, extended ramp) stay in the .blend only
+            o.select_set(True)
+    print('MODEL glb skipped hidden-state objects', _hid)
     bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'spacecraft_v17.glb'), export_format='GLB', use_selection=True, export_apply=True, export_animations=True, export_lights=False)
     print('MODEL glb', os.path.getsize(os.path.join(OUT, 'spacecraft_v17.glb')))
 
@@ -2612,21 +2848,17 @@ def topdown(name, z=1.38, res=(1600, 1000)):
     for o in CEIL: o.hide_render = False
 if DRY:
     sc.cycles.samples = SPP
+    raised(False)
     shot('x1_exterior_below', 120, (30, -34, -10), (0, 0, -2.5), 30, pad=False)
-    shot('b2_ramp_exterior', 200, (9.5, -6.5, -4.6), (-2.5, 0, -3.6), 22)
-    shot('b1_entrance_bay', 200, (-0.6, 3.9, -2.3), (-6.6, -.6, -3.0), 16)
+    shot('x2_exterior_belly_3q', 120, (3.5, -21, -6.2), (-3.2, 0, -3.0), 30, pad=False)
+    shot('x3_below_hall', 120, (-3.0, -2.5, -26), (-3.0, 0, -2.0), 32, pad=False)
+    shot('x4_top', 120, (0, -1.0, 78), (0, 0, 0), 30, pad=False)
     shot('h1_hall_empty', 120, (2.4, -1.8, Z0 + 1.7), (-7.5, .8, Z0 + .5), 18)
-    raised(True); shot('h2_hall_table_raised', 120, (1.2, 2.9, Z0 + 2.1), (HC.x, 0, Z0 + .9), 20); raised(False)
-    shot('c1_corridor_from_hall', 160, (HC.x + HR - 2.6, 0, Z0 + 1.65), (CX1 + 1, 0, Z0 + 1.2), 18)
-    shot('c2_cabin', 160, (7.9, 1.15, Z0 + 1.75), (5.4, 3.3, Z0 + .5), 16)
-    shot('h5_reactor_window', 240, (-7.6, 1.9, Z0 + 1.9), (EX, 1.0, 1.7), 24)
-    shot('r1_hybrid_core', 240, (EX + 1.25, -.85, PT + .75), (EX, 0, PT + .17), 32)
+    shot('h3_hatch_closed', 120, (-3.4, -2.2, Z0 + 1.8), (-5.9, 0, Z0), 22)
+    shot('b1_entrance_bay', 200, (-0.6, 3.9, -2.3), (-6.6, -.6, -3.0), 16)
     shot('r2_reactor_room', 240, (EX + 3.4, -1.5, ZA + 1.75), (EX - 2.2, 1.6, ZA + 1.25), 16)
-    shot('w1_workshop', 200, pol(4.7, 150, ZG + 1.65), pol(6.75, 151, ZG + 1.05), 20)
+    shot('r3_reactor_starboard', 240, (EX + 2.6, 1.4, ZA + 1.7), (EX - 3.5, -2.2, ZA + 1.3), 16)
     shot('br1_bridge_lobby', 200, (BR + 1.4, -.5, ZB + 1.7), (px + .5, .2, ZB + .7), 16)
-    shot('br2_bridge_pilots', 200, (LX + .2, 1.2, ZB + 1.65), (px + 1.6, -.2, ZB + .9), 20)
-    try: topdown('t1_topdown_section')
-    except Exception as e: print('Error topdown', e)
     save_blend()
     try: export_glbs()
     except Exception as e: print('Error glb', e)
