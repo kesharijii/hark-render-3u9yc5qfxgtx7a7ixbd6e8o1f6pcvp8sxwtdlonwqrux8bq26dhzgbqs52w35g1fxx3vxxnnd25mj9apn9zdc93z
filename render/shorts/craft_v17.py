@@ -4,6 +4,7 @@ DRY (env) non-empty -> stills only. Otherwise renders frames f_####.png START..E
 World: Blender Z-up, nose +X. Hull scaled x40 (~39 m). Layout numbers are written in a x32 frame and multiplied by K.
 """
 import math, os, sys, urllib.request
+import time as _tm0; _TS = _tm0.time()
 import bpy, bmesh
 from mathutils import Vector
 
@@ -1773,6 +1774,7 @@ for s_, m_, c_ in ((1, M_NAVR, (1, .1, .05)), (-1, M_NAVG, (.1, 1, .2))):   # po
 print('MODEL v16 exterior details', placed, 'tips', tip)
 # ================================================================== v17 PASS: clean hull, crew deck at hall level, keel entrance bay
 print('MODEL v17 pass start')
+print('TIMING v17pass start', round(_tm0.time() - _TS))
 from mathutils.bvhtree import BVHTree as _BVH
 def _rm(o):
     try: bpy.data.objects.remove(o, do_unlink=True)
@@ -1832,6 +1834,7 @@ for o in list(bpy.data.objects):
     elif o.type in ('LIGHT', 'CURVE'):
         if t_crew(np.array([list(o.matrix_world.translation)]))[0]: _rm(o); _nc += 1
 print('MODEL v17 crew volume cleared faces/objs', _nc)
+print('TIMING crew carved', round(_tm0.time() - _TS))
 # floor: one continuous plate at hall level (Z0), aft edge on the hall circle, sides inset from the hull
 def strip_mesh(name, z, mat, th, off=-1, nv_=24, x0=None):
     V = []; F = []; xs_ = [x for x in CXS if x0 is None or x >= x0]
@@ -1935,6 +1938,7 @@ Box('LoftLadderL', (11.5, .55, (Z0 + CZC) / 2 + .1), (.04, .04, CZC - Z0 + .2), 
 for k in range(8): Box(f'LoftLadderRung{k}', (11.5, .4, Z0 + .3 + k * .28), (.03, .3, .03), M_STEEL)
 Box('LoftHatchFrame', (11.5, .4, CZC + .07), (.75, .7, .03), M_AMBER)
 print('MODEL v17 crew block: cabins', len(CAB), 'loft racks', _nr)
+print('TIMING crew block done', round(_tm0.time() - _TS))
 
 # ---- B1 (v17b-2). entrance bay inside a SHALLOW faired belly disc (user refs 16:24): flat bottom r<RF at KB, cosine-eased
 #      rise that lands tangentially on the hull / blister / sponson underside at RE, rim tucked 6 cm inside that skin.
@@ -1980,6 +1984,7 @@ for o in list(bpy.data.objects):
         try: _nk += carve_faces(o, t_keel)
         except Exception as e: print('Error keelcarve', o.name, e)
 print('MODEL v17 keel volume carved', _nk)
+print('TIMING keel carved', round(_tm0.time() - _TS))
 V = []; F = []; NPRO = None
 for j in range(NA_):
     a = 360 * j / NA_; zR = float(zR_s[j])
@@ -1995,6 +2000,7 @@ F.append(tuple(j * NPRO for j in range(NA_))[::-1])
 M_FAIR = hull.data.materials[0].copy(); M_FAIR.name = 'KeelFairingHull'; M_FAIR.use_backface_culling = False
 ks = mk('KeelFairing', V, F, M_FAIR, smooth=True)
 _ca = ks.data.color_attributes.new('Livery', 'FLOAT_COLOR', 'POINT')
+print('TIMING line 1998', round(__import__('time').time() - _TS))
 try:
     from mathutils.kdtree import KDTree as _KDT
     hl_ = hull.data.color_attributes.get('Livery'); nvh = len(hull.data.vertices)
@@ -2012,10 +2018,12 @@ try:
     _ca.data.foreach_set('color', np.array(vc, np.float32).ravel())
 except Exception as e:
     print('Error fairing colour', e); _ca.data.foreach_set('color', np.tile([.055, .06, .07, 1], len(V)).astype(np.float32))
+print('TIMING fairing livery done', round(_tm0.time() - _TS))
 uvl_ = ks.data.uv_layers.new(name='UVMap')
 for poly in ks.data.polygons:
     for li in poly.loop_indices: v_ = V[ks.data.loops[li].vertex_index]; uvl_.data[li].uv = (v_[0] / 20, v_[1] / 20)
 so_ = ks.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .06; so_.offset = -1
+print('TIMING fairing uv done', round(_tm0.time() - _TS))
 # round belly hatch: clean boolean opening through the fairing and the bay floor
 def _cutter(nm, r, z0, z1):
     bpy.ops.mesh.primitive_cylinder_add(vertices=96, radius=r, depth=z1 - z0, location=(RH_C[0], RH_C[1], (z0 + z1) / 2))
@@ -2025,6 +2033,7 @@ bo = ks.modifiers.new('Hatch', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.objec
 fk = polar_grid('KeelFloor', 0.0, RF - .2, lambda r: KF, M_HFL, dr=.3, da=3.0)
 so_ = fk.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = -1
 bo = fk.modifiers.new('Hatch', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.object = _hc; bo.solver = 'EXACT'
+print('TIMING hatch booleans set', round(_tm0.time() - _TS))
 # hatch well: short lined tube from the bay floor to the belly, warm lit ring at the belly edge and at the floor edge
 Cyl('BellyHatchWell', (RH_C[0], RH_C[1], (KF + KB) / 2), RH_R + .01, KF - KB + .02, M_HD, v=96)
 _w = bpy.data.objects['BellyHatchWell']; _wm = _w.data
@@ -2147,6 +2156,7 @@ for o in bpy.data.objects:
         mw0 = o.matrix_world.copy(); o.parent = hull; o.matrix_parent_inverse = hull.matrix_world.inverted(); o.matrix_world = mw0; _npl += 1
 print('MODEL v17 X plates parented to Hull', _npl)
 
+print('TIMING B done', round(_tm0.time() - _TS))
 LX = 16.0; PT = ZA + .95
 # ================================================================== v17 PHASE C: bridge lobby, cat-size core, reactor screen room, workshop, h5 glass
 print('MODEL v17 phase C start')
@@ -2175,6 +2185,7 @@ M_TBLG = glass('LobbyTableGlass', (.92, .97, 1), .0)
 M_CHROME = pbsdf('Chrome', (.8, .8, .82), 1, .12)
 M_CLEAR = glass('ClearPane', (.98, .99, 1), .0)
 
+print('TIMING line 2178', round(__import__('time').time() - _TS))
 try:
     exec(compile(r"""# ---- C1. BRIDGE: pilot group 2.2 m aft, lobby (sofas, glass table, walkway), racks with monkey ladders
 DXB = -2.2; px_old = px; px = px_old + DXB
@@ -2243,6 +2254,7 @@ Area('LobbyLight', (LX, 0, (ceil_at(LX, 0) or ZB + 2.2) - .1), 1.2, 90, (1, .93,
 """, "phase_C1", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C1"); traceback.print_exc()
+print('TIMING line 2246', round(__import__('time').time() - _TS))
 try:
     exec(compile(r"""# ---- C2. REACTOR: cat-size hybrid core on a pedestal (0.5 m long, ~0.36 m tall), pipes, small rail
 _nr = _rmp(('BlanketTank', 'TankRim', 'TankRib', 'FuelAsm', 'FuelCap', 'CtrlRod', 'CtrlDrive', 'RodGantry', 'GantryBeam', 'FusionPlasma', 'FusionHalo',
@@ -2288,6 +2300,7 @@ print('MODEL v17 mini core removed', _nr, 'pedestal top', round(PT, 2), 'core 0.
 """, "phase_C2", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C2"); traceback.print_exc()
+print('TIMING line 2291', round(__import__('time').time() - _TS))
 try:
     # ---- v17b C2b. REACTOR ROOM SHELL: one continuous lining + floor fitted to the hull (ray cast, >= 0.25 m inside the skin)
     XA0 = float(SEG['aft'][1][0]); XA1 = XSB + .04
@@ -2307,6 +2320,7 @@ try:
         for j, ph in enumerate(PHS):
             h = hdist((float(x), 0, ZRC), (0, math.cos(ph), math.sin(ph)), 8.0)
             DH[i, j] = h if h is not None else 6.0; DO[i, j] = _old_d(float(x), ph)
+    print('TIMING reactor shell rays', round(_tm0.time() - _TS))
     D = np.minimum(DH - .3, DO + .05)
     for _ in range(2):
         Dp = np.concatenate([D[:, -2:], D, D[:, :2]], 1); D = sum(Dp[:, k:k + NPH] for k in range(5)) / 5
@@ -2341,6 +2355,7 @@ try:
     raise_mpl = False
 except Exception:
     import traceback; print('Error reactor shell'); traceback.print_exc(); raise_mpl = None
+print('TIMING line 2344', round(__import__('time').time() - _TS))
 try:
     if raise_mpl is not None:
         # forward ring wall at the shield's aft face: section polygon minus the shield slab rectangle (|y|<2.85, z<4.25)
@@ -2358,6 +2373,7 @@ try:
                 if abs(yc) < 2.85 and zc < 4.25: continue
                 if not _inpoly(yc, zc, q): continue
                 b = len(Vf); Vf += [(XA1, y, z), (XA1, y + st, z), (XA1, y + st, z + st), (XA1, y, z + st)]; Ff.append((b, b + 1, b + 2, b + 3))
+        print('TIMING reactor fwd grid', round(_tm0.time() - _TS), len(Ff))
         if Ff:
             fw = mk('ReactorShellFwd', Vf, Ff, M_LIN); bm = bmesh.new(); bm.from_mesh(fw.data); bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=.001); bm.to_mesh(fw.data); bm.free()
         # ribs every 1.6 m on the new section (panelling rhythm of the hall/corridor frames)
@@ -2403,6 +2419,7 @@ except Exception:
     import traceback; print('Error reactor shell 2'); traceback.print_exc()
 if 'shell_y' not in globals():
     def shell_y(x, s, z): return outer_y(x, s, z)
+print('TIMING line 2406', round(__import__('time').time() - _TS))
 try:
     exec(compile(r"""# ---- C3. REACTOR ROOM: curved vitals screen on the port wall (x -19..-13), wall-fixed desks under it, flush wall computers starboard
 VW, VH = 2048, 512
@@ -2505,6 +2522,7 @@ print('MODEL v17 reactor room screen x', SX0, SX1, 'z', round(SZ0, 2), round(SZ1
 """, "phase_C3", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C3"); traceback.print_exc()
+print('TIMING line 2508', round(__import__('time').time() - _TS))
 try:
     exec(compile(r"""# ---- C4. WORKSHOP on the gallery (arc 132-172): usable bench, true-scale tools in holders
 _nw = _rmp(('WorkBench', 'Robot'), exact=tuple(f'Tool{k}' for k in range(22)) + ('Crate0', 'Crate1'))
@@ -2569,6 +2587,7 @@ print('MODEL v17 workshop rebuilt, removed', _nw)
 """, "phase_C4", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C4"); traceback.print_exc()
+print('TIMING line 2572', round(__import__('time').time() - _TS))
 try:
     exec(compile(r"""# ---- C5. h5: the lead-glass windows become real clear panes (thin, clear, low-iron glass)
 _ng = 0
@@ -2581,6 +2600,7 @@ print('MODEL v17 phase C done')
 """, "phase_C5", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C5"); traceback.print_exc()
+print('TIMING line 2584', round(__import__('time').time() - _TS))
 try:
     exec(compile(r"""# ---- C6. clamp bridge floor/skirt/lobby vertices inside the hull; h5 clear panes (re)built
 def clamp_to_hull(o, m=.04):
@@ -2618,11 +2638,13 @@ except Exception:
 # ---- A4 (v17b). strict outside-hull check: every interior vertex is tested against the outer shell
 #      (14-direction escape rays + closest-point normal sign), then fixed: small parts are inset to >= 0.15 m clearance,
 #      large parts (linings, floors, frames) have their offending vertices pulled 0.08 m inside the skin.
+print('TIMING hullcheck start', round(_tm0.time() - _TS))
 SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelFairing', 'SkylightGlass', 'BellyHatchClosedDoor'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
 _cd = bpy.data.objects.get('BellyHatchClosedDoor')
 if _cd: _cd.hide_viewport = False          # the check treats the hatch as closed so the open hatch does not read as 'outside'
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 SB = bvh_of(SHELL)
+print('TIMING hullcheck shell bvh', round(_tm0.time() - _TS))
 if _cd: _cd.hide_viewport = True
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
 D14 = [Vector(v).normalized() for v in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1), (1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1))]
@@ -2654,11 +2676,17 @@ def _bake(o):   # apply modifiers so vertex edits match what is exported
     if o.modifiers:
         oe = o.evaluated_get(dg); me2 = bpy.data.meshes.new_from_object(oe); o.modifiers.clear(); o.data = me2
 import time as _tm
+# v17b-3 speed: hard budgets everywhere; the per-vertex pass reads coordinates with foreach_get, prefilters each vertex with one
+#   short-radius find_nearest + the nearest face's normal side, and only runs the 14-ray escape test on the few ambiguous ones.
+HC_FIX_BUDGET = 900 if _tm.time() - _TS < 4800 else 240      # whole fix loop (s)
+HC_OBJ_BUDGET = 60                                            # one object (s)
+HC_RECOUNT_BUDGET = 300
 _T0 = _tm.time(); _cut = False
-_off = []; _ext = []; _ins = 0; _proj = 0; _done = set()
+_off = []; _ext = []; _ins = 0; _proj = 0; _done = set(); _slow = []; _nobj = 0
 for o in list(bpy.data.objects):
     if not _interior(o): continue
-    if _tm.time() - _T0 > 1800: _cut = True; break
+    if _tm.time() - _T0 > HC_FIX_BUDGET: _cut = True; print('MODEL v17b hullcheck BUDGET overrun after', _nobj, 'objects, moving on'); break
+    _to = _tm.time(); _nobj += 1
     try:
         P_ = _wverts(o)
         if len(P_) == 0: continue
@@ -2666,26 +2694,32 @@ for o in list(bpy.data.objects):
         corners = np.array([[bb[i][0], bb[j][1], bb[k][2]] for i in (0, 1) for j in (0, 1) for k in (0, 1)])
         cs = [pstate(c) for c in corners]
         if all((not s_[0]) and s_[1] > .45 for s_ in cs): continue          # bbox fully inside with margin
-        sub, out, clr, st = _scan(P_)
+        sub, out, clr, st = _scan(P_, 60 if dim < 2.0 else 120)
         if out.all() and len(sub) > 3: _ext.append(o.name); continue        # wholly outside: an exterior part
         cen = Vector(P_.mean(0))
         if dim < 2.0:
             if clr.min() >= .15: continue
-            for it in range(10):
+            for it in range(8):
                 k = int(np.argmin(clr)); w = clr[k]
-                if w >= .15: break
+                if w >= .15 or _tm.time() - _to > HC_OBJ_BUDGET: break
                 loc = st[k][2]
                 d_ = (cen - loc).normalized() if loc is not None else Vector((0, -math.copysign(1, cen.y), 0))
                 mv = d_ * min(.35, (.16 - w))
                 m_ = o.matrix_world.copy(); m_.translation += mv; o.matrix_world = m_; P_ = P_ + np.array(mv); cen += mv
-                sub, out, clr, st = _scan(P_, 100)
+                sub, out, clr, st = _scan(P_, 60)
             _ins += 1; _done.add(o.name)
         else:
             if not (out.any() or clr.min() < .05): continue
-            _bake(o); me_ = o.data; Mw = o.matrix_world; Mi = Mw.inverted(); nmov = 0
-            for v in me_.vertices:
-                p = Mw @ v.co; loc, nrm, _, dist = SB.find_nearest(p, 4.0)
-                if loc is None or dist > .6: continue
+            _bake(o); me_ = o.data; Mw = o.matrix_world; Mi = Mw.inverted(); nmov = 0; namb = 0
+            nv_ = len(me_.vertices); co_ = np.empty(nv_ * 3, np.float32); me_.vertices.foreach_get('co', co_); co_ = co_.reshape(-1, 3)
+            Mn = np.array(Mw); W_ = co_ @ Mn[:3, :3].T + Mn[:3, 3]; Mi_ = np.array(Mi)
+            _vcut = False; newco = co_.copy()
+            for i_ in range(nv_):
+                if (i_ & 255) == 0 and (_tm.time() - _to > HC_OBJ_BUDGET or _tm.time() - _T0 > HC_FIX_BUDGET): _vcut = True; break
+                p = Vector(W_[i_]); loc, nrm, _, dist = SB.find_nearest(p, .6)
+                if loc is None: continue
+                if dist >= .05 and (p - loc).dot(nrm) < 0: continue        # on the inner side of the nearest skin with clearance
+                namb += 1
                 ok_, c_, _, _ = pstate(p)
                 if (not ok_) and c_ >= .05: continue
                 best = None
@@ -2693,29 +2727,34 @@ for o in list(bpy.data.objects):
                     q = loc + nrm * (sg * .08)
                     if not pstate(q)[0]: best = q; break
                 if best is None: best = p + (cen - p).normalized() * min(.5, dist + .08)
-                v.co = Mi @ best; nmov += 1
-            me_.update(); _proj += 1; _done.add(o.name)
-            print('MODEL v17b projected', o.name, nmov)
+                newco[i_] = np.array(Mi @ best, np.float32); nmov += 1
+            me_.vertices.foreach_set('co', newco.ravel()); me_.update(); _proj += 1; _done.add(o.name)
+            print('MODEL v17b projected', o.name, nmov, 'of', nv_, 'ambiguous', namb, 'VCUT' if _vcut else '', 'secs', round(_tm.time() - _to))
     except Exception as e: print('Error hullcheck', o.name, e)
-print('MODEL v17b outside-hull fix: inset', _ins, 'projected', _proj, 'secs', round(_tm.time() - _T0), 'TIME-CUT' if _cut else '')
+    if _tm.time() - _to > 5: _slow.append((o.name, round(_tm.time() - _to, 1)))
+print('MODEL v17b outside-hull fix: objects', _nobj, 'inset', _ins, 'projected', _proj, 'secs', round(_tm.time() - _T0), 'TIME-CUT' if _cut else '')
+print('TIMING hullcheck fix done', round(_tm0.time() - _TS), 'slowest', sorted(_slow, key=lambda t: -t[1])[:15])
 _T1 = _tm.time()
-# final recount on the fixed scene (denser sampling)
+# final recount on the fixed scene
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
-_off = []; _low = []
+print('TIMING hullcheck recount start', round(_tm0.time() - _TS))
+_off = []; _low = []; _rc = 0; _rcut = False
 for o in list(bpy.data.objects):
     if not _interior(o) or o.name in _ext: continue
-    if _tm.time() - _T1 > 900: print('MODEL v17b recount TIME-CUT'); break
+    if _tm.time() - _T1 > HC_RECOUNT_BUDGET: _rcut = True; print('MODEL v17b recount TIME-CUT after', _rc, 'objects'); break
+    _rc += 1
     try:
         P_ = _wverts(o)
         if len(P_) == 0: continue
         bb = np.array([P_.min(0), P_.max(0)]); dim = float((bb[1] - bb[0]).max())
         corners = np.array([[bb[i][0], bb[j][1], bb[k][2]] for i in (0, 1) for j in (0, 1) for k in (0, 1)])
         if all((not s_[0]) and s_[1] > .45 for s_ in (pstate(c) for c in corners)): continue
-        sub, out, clr, st = _scan(P_, 400)
+        sub, out, clr, st = _scan(P_, 200)
         if out.any(): _off.append((o.name, round(float(out.mean()), 3), round(float(-clr.min()), 3), np.round(bb[0], 2).tolist(), np.round(bb[1], 2).tolist(), np.round(sub[out][:2], 2).tolist()))
         elif dim < 2.0 and clr.min() < .15: _low.append((o.name, round(float(clr.min()), 3)))
     except Exception as e: print('Error hullcheck2', o.name, e)
-print('MODEL v17 outside-hull: offenders', len(_off), 'small parts under 0.15 m clearance', len(_low), 'exterior parts', len(_ext))
+print('TIMING hullcheck recount done', round(_tm0.time() - _TS), 'objects', _rc)
+print('MODEL v17 outside-hull: offenders', len(_off), 'small parts under 0.15 m clearance', len(_low), 'exterior parts', len(_ext), 'RECOUNT-CUT' if _rcut else '')
 for t in sorted(_off, key=lambda t: -t[2])[:80]: print('MODEL v17 OFFENDER', t)
 for t in sorted(_low, key=lambda t: t[1])[:40]: print('MODEL v17b LOWCLEAR', t)
 print('MODEL v17b EXTERIOR', sorted(set(n.rstrip('.0123456789') for n in _ext))[:80])
@@ -2764,7 +2803,9 @@ def clear_cam(name, loc, tgt):
             return tuple(L)
         L = L + (T - L).normalized() * .35
     print('Error camcheck', name, 'still inside'); return tuple(L)
+STILL_DEADLINE = 6000      # s since start: no new still after ~100 min, so the .blend + GLB always get saved
 def shot(name, *a, **k):
+    if _tm0.time() - _TS > STILL_DEADLINE: print('MODEL TIMING skip still', name, 'elapsed', round(_tm0.time() - _TS)); return
     try: _shot(name, *a, **k)
     except Exception:
         import traceback; print('Error shot', name); traceback.print_exc()
@@ -2773,7 +2814,7 @@ def _shot(name, frame, loc, tgt, lens=28, cut=0, res=(1600, 900), pad=True):
     if not cut: loc = clear_cam(name, loc, tgt)
     look(loc, tgt, lens)
     for o in CEIL: o.hide_render = bool(cut)
-    r.resolution_x, r.resolution_y = res; r.filepath = os.path.join(OUT, name + '.png'); bpy.ops.render.render(write_still=True); print('RENDER', name)
+    r.resolution_x, r.resolution_y = res; r.filepath = os.path.join(OUT, name + '.png'); bpy.ops.render.render(write_still=True); print('RENDER', name, 'TIMING', round(_tm0.time() - _TS))
 
 def export_glbs():
     for o in bpy.context.selected_objects: o.select_set(False)
@@ -2879,6 +2920,7 @@ def topdown(name, z=1.38, res=(1600, 1000)):
     cam.data.type = 'PERSP'
     for o in hid: o.hide_render = False
     for o in CEIL: o.hide_render = False
+print('TIMING stills start', round(_tm0.time() - _TS))
 if DRY:
     sc.cycles.samples = SPP
     raised(False)
@@ -2893,9 +2935,10 @@ if DRY:
     shot('r2_reactor_room', 240, (EX + 3.4, -1.5, ZA + 1.75), (EX - 2.2, 1.6, ZA + 1.25), 16)
     shot('r3_reactor_starboard', 240, (EX + 2.6, 1.4, ZA + 1.7), (EX - 3.5, -2.2, ZA + 1.3), 16)
     shot('br1_bridge_lobby', 200, (BR + 1.4, -.5, ZB + 1.7), (px + .5, .2, ZB + .7), 16)
-    save_blend()
+    print('TIMING save start', round(_tm0.time() - _TS)); save_blend()
     try: export_glbs()
     except Exception as e: print('Error glb', e)
+    print('TIMING glb done', round(_tm0.time() - _TS))
 else:
     r.image_settings.file_format = 'JPEG'; r.image_settings.quality = 92; r.use_persistent_data = True
     for f in range(S0, min(S1, NTOUR) + 1):
