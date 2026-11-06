@@ -5,6 +5,11 @@ World: Blender Z-up, nose +X. Hull scaled x40 (~39 m). Layout numbers are writte
 """
 import math, os, sys, urllib.request
 import time as _tm0; _TS = _tm0.time()
+# v17b-3: Blender ignores PYTHONUNBUFFERED, so force line-buffered stdout (the CI log is tee'd live) and dump every thread's
+#   stack every 5 min so a stall inside a C call still shows its Python line in the log.
+try: sys.stdout.reconfigure(line_buffering=True); sys.stderr.reconfigure(line_buffering=True)
+except Exception: pass
+import faulthandler; faulthandler.dump_traceback_later(300, repeat=True, file=sys.stdout)
 import bpy, bmesh
 from mathutils import Vector
 
@@ -2033,6 +2038,14 @@ bo = ks.modifiers.new('Hatch', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.objec
 fk = polar_grid('KeelFloor', 0.0, RF - .2, lambda r: KF, M_HFL, dr=.3, da=3.0)
 so_ = fk.modifiers.new('S', 'SOLIDIFY'); so_.thickness = .08; so_.offset = -1
 bo = fk.modifiers.new('Hatch', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.object = _hc; bo.solver = 'EXACT'
+# v17b-3 speed fix: bake the two hatch booleans NOW. Left live, every later bpy.ops call (thousands of Box/Cyl adds) re-evaluated
+#   two EXACT booleans on the dense solidified fairing + floor, which is what made v17b builds run for hours.
+def _apply_mods(o):
+    bpy.context.view_layer.update(); dg_ = bpy.context.evaluated_depsgraph_get()
+    me2 = bpy.data.meshes.new_from_object(o.evaluated_get(dg_), preserve_all_data_layers=True, depsgraph=dg_)
+    o.modifiers.clear(); o.data = me2; me2.name = o.name
+for _o in (ks, fk):
+    _ta = _tm0.time(); _apply_mods(_o); print('TIMING baked booleans', _o.name, round(_tm0.time() - _ta, 1), 's, faces', len(_o.data.polygons), 'at', round(_tm0.time() - _TS))
 print('TIMING hatch booleans set', round(_tm0.time() - _TS))
 # hatch well: short lined tube from the bay floor to the belly, warm lit ring at the belly edge and at the floor edge
 Cyl('BellyHatchWell', (RH_C[0], RH_C[1], (KF + KB) / 2), RH_R + .01, KF - KB + .02, M_HD, v=96)
