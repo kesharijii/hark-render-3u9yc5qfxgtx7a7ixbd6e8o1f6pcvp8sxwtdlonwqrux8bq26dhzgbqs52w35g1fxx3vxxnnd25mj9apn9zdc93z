@@ -2061,6 +2061,321 @@ for o in bpy.data.objects:
         mw0 = o.matrix_world.copy(); o.parent = hull; o.matrix_parent_inverse = hull.matrix_world.inverted(); o.matrix_world = mw0; _npl += 1
 print('MODEL v17 X plates parented to Hull', _npl)
 
+LX = 16.0; PT = ZA + .95
+# ================================================================== v17 PHASE C: bridge lobby, cat-size core, reactor screen room, workshop, h5 glass
+print('MODEL v17 phase C start')
+def _rmp(pfx, exact=()):
+    n = 0
+    for o in list(bpy.data.objects):
+        if (pfx and o.name.startswith(pfx)) or o.name in exact: _rm(o); n += 1
+    return n
+def wstrip(name, xs, s, z0, z1, din0, din1, mat, wall):
+    # solid strip hugging a side wall: cross-section at each x is (|y| = wall-din1 .. wall-din0) x (z0 .. z1)
+    V = []; F = []
+    for x in xs:
+        wl = wall(float(x), (z0 + z1) / 2)
+        yo, yi = s * (wl - din0), s * (wl - din1)
+        V += [(float(x), yi, z0), (float(x), yo, z0), (float(x), yo, z1), (float(x), yi, z1)]
+    n = len(xs)
+    for i in range(n - 1):
+        b, c = 4 * i, 4 * (i + 1)
+        for k in range(4): F.append((b + k, b + (k + 1) % 4, c + (k + 1) % 4, c + k))
+    F.append((3, 2, 1, 0)); e = 4 * (n - 1); F.append((e, e + 1, e + 2, e + 3))
+    o = mk(name, V, F, mat)
+    if True:
+        bm = bmesh.new(); bm.from_mesh(o.data); bmesh.ops.recalc_face_normals(bm, faces=bm.faces); bm.to_mesh(o.data); bm.free()
+    return o
+M_TBLG = glass('LobbyTableGlass', (.92, .97, 1), .0)
+M_CHROME = pbsdf('Chrome', (.8, .8, .82), 1, .12)
+M_CLEAR = glass('ClearPane', (.98, .99, 1), .0)
+
+try:
+    exec(compile(r"""# ---- C1. BRIDGE: pilot group 2.2 m aft, lobby (sofas, glass table, walkway), racks with monkey ladders
+DXB = -2.2; px_old = px; px = px_old + DXB
+BR_PFX = ('Pilot', 'Ctrl_', 'Stick', 'ThrTrack', 'ThrSlot', 'ThrLever', 'ThrKnob', 'Pedal', 'PanelBase', 'PanelFace', 'MFD', 'Glare', 'SideStation', 'SideScr', 'Pedestal', 'GearLever',
+          'Mode', 'OverheadPanel', 'Sw', 'Captain')
+_nb = 0
+for o in bpy.data.objects:
+    if o.parent is None and o.name.startswith(BR_PFX) and o.location.x > BR + .8 and abs(o.location.y) < 4.5 and o.location.z < ZB + 3.0: o.location.x += DXB; _nb += 1
+zc_old = (ceil_at(px_old + .3, 0, ZB + .1) or ZB + 2.0) - .12; zc_new = (ceil_at(px + .3, 0, ZB + .1) or ZB + 2.0) - .12
+for o in bpy.data.objects:
+    if o.parent is None and o.name.startswith(('OverheadPanel', 'Ctrl_Switch_', 'SwGuard')) and o.location.x > BR + .8: o.location.z += zc_new - zc_old
+def bwall(x, z):   # bridge inner wall |y| at (x, z): lining profile and hull, whichever is tighter
+    a = abs(outer_y(x, 1, z)); h1 = hdist((x, 0, z), (0, 1, 0)) or 9; h2 = hdist((x, 0, z), (0, -1, 0)) or 9
+    return min(a, h1 - .12, h2 - .12)
+for s in (-1, 1):
+    xs_ = px - 1.5
+    for nm_, d_ in ((f'SideStation{s}', .45), (f'SideScr{s}', .16)):
+        o = bpy.data.objects.get(nm_)
+        if o: o.location.y = s * (bwall(xs_, ZB + 1.0) - d_ + (.05 if d_ > .3 else 0))
+print('MODEL v17 bridge shift', DXB, 'objects', _nb, 'px', round(px_old, 2), '->', round(px, 2), 'bridge length', round(nose_end - BR, 2), 'hw', [(round(x, 1), round(bwall(x, ZB + .5), 2), round(bwall(x, ZB + 1.2), 2)) for x in (13, 14, 16, 18, 20, 22.8)])
+LX = 16.0; TR = .55; WALK = .9
+# glass table
+Cyl('LobbyTableTop', (LX, 0, ZB + .46), TR, .025, M_TBLG, v=64); Tor('LobbyTableEdge', (LX, 0, ZB + .46), TR, .012, M_CHROME, ms=64, ns=6)
+Cyl('LobbyTableLeg', (LX, 0, ZB + .24), .035, .42, M_CHROME); Cyl('LobbyTableBase', (LX, 0, ZB + .055), .24, .02, M_CHROME, v=48)
+# low sofas against both walls (x 14.7-17.3), front edge kept >= table + walkway
+sx_ = np.linspace(14.7, 17.3, 14)
+for s in (-1, 1):
+    wl = lambda x, z: bwall(x, ZB + .85)
+    front = min(wl(float(x), 0) for x in sx_) - .7
+    if front < TR + WALK: print('Error lobby tight: sofa front', round(front, 2))
+    wstrip(f'LobbySofaBase{s}', sx_, s, ZB + .05, ZB + .3, .05, .72, M_HD, wl)
+    wstrip(f'LobbySofaSeat{s}', sx_[1:-1], s, ZB + .3, ZB + .42, .12, .7, M_FAB, wl)
+    wstrip(f'LobbySofaBack{s}', sx_[1:-1], s, ZB + .3, ZB + .78, .05, .2, M_FAB, wl)
+    for xe in (sx_[0], sx_[-1]): wstrip(f'LobbySofaArm{s}_{xe:.0f}', np.array([xe - .06, xe + .06]) + (.06 if xe == sx_[0] else -.06), s, ZB + .05, ZB + .55, .05, .72, M_HD, wl)
+    for k, xc in enumerate((15.3, 16.7)): soft(Box(f'LobbyCushion{s}{k}', (xc, s * (wl(xc, 0) - .3), ZB + .6), (.4, .12, .32), M_STRAP, rot=(s * 12, 0, 0)), 1)
+    print('MODEL v17 lobby side', s, 'sofa front |y|', round(front, 2), 'clear walkway', round(front - TR, 2))
+# open storage racks with monkey ladders (x 13.2-14.6 and 17.6-19.0, both sides)
+for s in (-1, 1):
+    for k, (x0, x1) in enumerate(((13.2, 14.6), (17.6, 19.0))):
+        xc = (x0 + x1) / 2; D = .45
+        wy = min(bwall(x, z) for x in (x0, xc, x1) for z in (ZB + .2, ZB + 1.0, ZB + 1.8))
+        yc = s * (wy - D / 2 - .03); top = min(ZB + 2.0, (ceil_at(xc, abs(yc) + D / 2) or ZB + 2.1) - .08)
+        nm = f'Rack{s}{k}'
+        for xx in (x0 + .03, x1 - .03):
+            for yy in (yc - D / 2 + .03, yc + D / 2 - .03): Box(f'{nm}Post{xx:.1f}{yy:.1f}', (xx, yy, (ZB + top) / 2), (.04, .04, top - ZB), M_RIB)
+        nsh = 4
+        for j in range(nsh + 1):
+            zz = ZB + .12 + j * (top - ZB - .2) / nsh; Box(f'{nm}Shelf{j}', (xc, yc, zz), (x1 - x0 - .04, D - .04, .025), M_HD)
+            Box(f'{nm}Lip{j}', (xc, yc - s * (D / 2 - .02), zz + .04), (x1 - x0 - .06, .015, .06), M_AMBER if j == 0 else M_RIB)
+            if j < nsh:
+                random.seed(97 + k * 10 + j + (s > 0) * 50)
+                xx = x0 + .12
+                while xx < x1 - .35:
+                    w_ = random.uniform(.22, .42); h_ = min(random.uniform(.16, .3), (top - ZB - .2) / nsh - .06)
+                    if random.random() < .8: Box(f'{nm}Bin{j}_{xx:.2f}', (xx + w_ / 2, yc + s * .02, zz + .0125 + h_ / 2), (w_ - .03, D - .12, h_), M_CRATE if random.random() < .6 else M_ORNG)
+                    xx += w_ + .03
+        # monkey ladder: vertical rails on the aisle face, round rungs every 0.28 m
+        yl = yc - s * (D / 2 + .09)
+        for e in (-1, 1): Cyl(f'{nm}LadRail{e}', (xc + e * .22, yl, (ZB + top + .15) / 2), .02, top + .15 - ZB, M_CHROME, v=12)
+        for j, zz in enumerate(np.arange(ZB + .3, top, .28)): Cyl(f'{nm}Rung{j}', (xc, yl, float(zz)), .016, .44, M_CHROME, rot=(0, 90, 0), v=10)
+        for zz in (ZB + .5, top - .1):
+            for e in (-1, 1): Box(f'{nm}LadStand{e}{zz:.1f}', (xc + e * .22, (yl + yc - s * D / 2) / 2, zz), (.03, .1, .03), M_RIB)
+        print('MODEL v17 rack', nm, 'x', x0, x1, 'yc', round(yc, 2), 'top', round(top - ZB, 2))
+Area('LobbyLight', (LX, 0, (ceil_at(LX, 0) or ZB + 2.2) - .1), 1.2, 90, (1, .93, .82))
+
+""", "phase_C1", "exec"), globals())
+except Exception:
+    import traceback; print("Error phase C1"); traceback.print_exc()
+try:
+    exec(compile(r"""# ---- C2. REACTOR: cat-size hybrid core on a pedestal (0.5 m long, ~0.36 m tall), pipes, small rail
+_nr = _rmp(('BlanketTank', 'TankRim', 'TankRib', 'FuelAsm', 'FuelCap', 'CtrlRod', 'CtrlDrive', 'RodGantry', 'GantryBeam', 'FusionPlasma', 'FusionHalo',
+            'FieldCoil', 'FusionSolenoid', 'CorePlinth', 'CryoBase', 'HeatX', 'HXFin', 'Pump', 'Anim_PumpRotor', 'HotLeg', 'ColdLeg', 'Return', 'Grate',
+            'CorePost', 'CoreRail', 'CoreHazard', 'EngDesk', 'EngMon', 'EngKeys', 'EngChair', 'Coolant1'))
+M_ROD2 = pbsdf('ControlRodDark', (.012, .012, .014), .6, .5)
+M_CHER2 = pbsdf('CherenkovDim', (.05, .2, .7), 0, .3, (.08, .35, 1), 1.0)
+M_CAPG = glass('CoreCapsule', (.95, .98, 1), .0)
+PT = ZA + .95; CC = (EX, 0)
+Cyl('CorePedBase', (EX, 0, ZA + .04), .36, .08, M_ARCRIM, v=48); Cyl('CorePedestal', (EX, 0, (ZA + PT) / 2), .19, PT - ZA, M_THR, v=40)
+for k in range(4): Box(f'CorePedFin{k}', (EX + .2 * math.cos(k * math.pi / 2), .2 * math.sin(k * math.pi / 2), ZA + .35), (.12, .03, .6), M_RIB, rot=(0, 0, k * 90))
+Cyl('CorePedFlange', (EX, 0, PT - .02), .3, .04, M_ARCRIM, v=48)
+def _sx(o, sx=1.4): o.scale = (sx, 1, 1); return o
+_sx(Cyl('MiniCoreBase', (EX, 0, PT + .025), .175, .05, M_ARCRIM, v=48))
+_sx(Cyl('MiniCoreCapsule', (EX, 0, PT + .05 + .13), .17, .26, M_CAPG, v=48))
+_sx(Tor('MiniCoreTopRim', (EX, 0, PT + .315), .17, .012, M_ARCRIM, ms=48, ns=8))
+_sx(Tor('MiniCorePlasma', (EX, 0, PT + .18), .075, .022, M_PLASMA, ms=48, ns=12), 1.3)
+_sx(Tor('MiniCoreHalo', (EX, 0, PT + .18), .075, .04, M_PLASMAH, ms=48, ns=12), 1.3)
+for k in range(8):
+    a = k * 2 * math.pi / 8; Tor(f'MiniFieldCoil{k}', (EX + 1.3 * .075 * math.cos(a), .075 * math.sin(a), PT + .18), .05, .005, M_COPPER, rot=(90, 0, math.degrees(a) + 90), ms=20, ns=6)
+for k in range(10):
+    a = (k + .5) * 2 * math.pi / 10; Cyl(f'MiniFuel{k}', (EX + 1.4 * .148 * math.cos(a), .148 * math.sin(a), PT + .17), .016, .2, M_CHER2, v=6)
+for k in range(6):
+    a = k * 2 * math.pi / 6; x_, y_ = EX + 1.4 * .125 * math.cos(a), .125 * math.sin(a)
+    Cyl(f'MiniRod{k}', (x_, y_, PT + .2), .008, .24, M_ROD2, v=10); Box(f'MiniRodDrive{k}', (x_, y_, PT + .335), (.03, .03, .03), M_ROD2)
+Cyl('MiniSolenoid', (EX, 0, PT + .18), .022, .2, M_RIB, v=16)
+Tor('CoreHazardRing', (EX, 0, ZA + .01), .78, .04, M_AMBER, ms=48, ns=4)
+for k in range(8):
+    a = k * math.pi / 4 + math.pi / 8; Cyl(f'CoreRailPost{k}', (EX + .95 * math.cos(a), .95 * math.sin(a), ZA + .5), .02, 1.0, M_RIB, v=10)
+Tor('CoreRailTop', (EX, 0, ZA + 1.0), .95, .022, M_AMBER, ms=64, ns=6); Tor('CoreRailMid', (EX, 0, ZA + .55), .95, .015, M_RIB, ms=64, ns=6)
+xa = SEG['aft'][1][0] + .9
+for s in (-1, 1):
+    pipe(f'CoreFeed{s}', [(EX, s * .2, ZA + .55), (EX - .5, s * .45, ZA + .2), (EX - 2.0, s * .6, ZA + .2), (xa + .72, s * .45, ZA + 1.1)], .045, M_COPPER)
+    pipe(f'CoreRet{s}', [(EX + .1, s * .19, ZA + .8), (EX - .6, s * .7, ZA + .9), (xa + .72, s * .55, ZA + 1.6)], .035)
+for nm_, loc_, col_, e_ in (('ReactorGlow', (EX + .7, -.3, PT + .4), (.3, .5, 1), 18), ('ReactorLight', (EX, 0, PT + .6), (.55, .35, 1), 8)):
+    L_ = bpy.data.objects.get(nm_)
+    if L_: L_.location = loc_; L_.data.energy = e_; L_.data.color = col_; L_.data.shadow_soft_size = .05
+print('MODEL v17 mini core removed', _nr, 'pedestal top', round(PT, 2), 'core 0.48 x 0.34 x', round(.355, 2))
+
+""", "phase_C2", "exec"), globals())
+except Exception:
+    import traceback; print("Error phase C2"); traceback.print_exc()
+try:
+    exec(compile(r"""# ---- C3. REACTOR ROOM: curved vitals screen on the port wall (x -19..-13), wall-fixed desks under it, flush wall computers starboard
+VW, VH = 2048, 512
+F5 = {
+'A': "01110 10001 10001 11111 10001 10001 10001", 'B': "11110 10001 10001 11110 10001 10001 11110",
+'C': "01110 10001 10000 10000 10000 10001 01110", 'D': "11110 10001 10001 10001 10001 10001 11110",
+'E': "11111 10000 10000 11110 10000 10000 11111", 'F': "11111 10000 10000 11110 10000 10000 10000",
+'G': "01110 10001 10000 10111 10001 10001 01111", 'H': "10001 10001 10001 11111 10001 10001 10001",
+'I': "01110 00100 00100 00100 00100 00100 01110", 'J': "00111 00010 00010 00010 00010 10010 01100",
+'K': "10001 10010 10100 11000 10100 10010 10001", 'L': "10000 10000 10000 10000 10000 10000 11111",
+'M': "10001 11011 10101 10101 10001 10001 10001", 'N': "10001 10001 11001 10101 10011 10001 10001",
+'O': "01110 10001 10001 10001 10001 10001 01110", 'P': "11110 10001 10001 11110 10000 10000 10000",
+'Q': "01110 10001 10001 10001 10101 10010 01101", 'R': "11110 10001 10001 11110 10100 10010 10001",
+'S': "01111 10000 10000 01110 00001 00001 11110", 'T': "11111 00100 00100 00100 00100 00100 00100",
+'U': "10001 10001 10001 10001 10001 10001 01110", 'V': "10001 10001 10001 10001 10001 01010 00100",
+'W': "10001 10001 10001 10101 10101 10101 01010", 'X': "10001 10001 01010 00100 01010 10001 10001",
+'Y': "10001 10001 01010 00100 00100 00100 00100", 'Z': "11111 00001 00010 00100 01000 10000 11111",
+'0': "01110 10001 10011 10101 11001 10001 01110", '1': "00100 01100 00100 00100 00100 00100 01110",
+'2': "01110 10001 00001 00010 00100 01000 11111", '3': "11111 00010 00100 00010 00001 10001 01110",
+'4': "00010 00110 01010 10010 11111 00010 00010", '5': "11111 10000 11110 00001 00001 10001 01110",
+'6': "00110 01000 10000 11110 10001 10001 01110", '7': "11111 00001 00010 00100 01000 01000 01000",
+'8': "01110 10001 10001 01110 10001 10001 01110", '9': "01110 10001 10001 01111 00001 00010 01100",
+'.': "00000 00000 00000 00000 00000 01100 01100", '%': "11000 11001 00010 00100 01000 10011 00011",
+'/': "00000 00001 00010 00100 01000 10000 00000", ':': "00000 01100 01100 00000 01100 01100 00000",
+'-': "00000 00000 00000 11111 00000 00000 00000", ' ': "00000 00000 00000 00000 00000 00000 00000",
+'+': "00000 00100 00100 11111 00100 00100 00000", '|': "00100 00100 00100 00100 00100 00100 00100",
+}
+def vitals_image(W=2048, H=512):
+    img = np.zeros((H, W, 3), np.float32); img[:] = (.01, .025, .05)
+    def text(s, x, y, sc, col):
+        for i, ch in enumerate(s.upper()):
+            g = F5.get(ch, F5[' ']).split()
+            for r, row in enumerate(g):
+                for c, b in enumerate(row):
+                    if b == '1':
+                        y0 = y + r * sc; x0 = x + (i * 6 + c) * sc
+                        img[y0:y0 + sc - 1, x0:x0 + sc - 1] = col
+    def bar(x, y, w, h, frac, col):
+        img[y:y + h, x:x + w] = (.04, .08, .12); img[y:y + h, x:x + int(w * frac)] = col
+    CY = (.25, .85, 1.0); WH = (.85, .95, 1.0); GR = (.2, 1.0, .35); PU = (.7, .45, 1.0); AM = (1, .65, .2)
+    img[0:6, :] = CY; img[H - 6:H, :] = CY
+    text('REACTOR VITALS  HYBRID CORE MK2', 40, 22, 6, CY)
+    rows = [('PLASMA TEMP', '148.2 MK', .74, PU), ('CONFINEMENT', '99.7 %', .997, CY), ('NEUTRON FLUX', '3.1E14 N/CM2S', .55, CY),
+            ('FISSION POWER', '12.4 MW', .30, CY), ('TOTAL OUTPUT', '41.8 MW', .70, GR),
+            ('COOLANT IN', '285 C', .48, CY), ('COOLANT OUT', '327 C', .55, AM), ('ROD INSERTION', '38 %', .38, WH),
+            ('RADIATION', '0.4 USV/H', .08, GR), ('FIELD COILS', '14/14 ONLINE', 1.0, GR)]
+    for k, (lab, val, f, col) in enumerate(rows):
+        cx = 40 if k < 5 else W // 2 + 30; cy = 90 + (k % 5) * 64
+        text(lab, cx, cy, 4, WH); text(val, cx + 14 * 24, cy, 4, col); bar(cx + 14 * 24, cy + 32, 560, 10, f, col)
+    img[90:90 + 5 * 64 - 20, W // 2 - 4:W // 2] = (.15, .4, .6)
+    img[H - 80:H - 16, 40:W - 40] = (.04, .35, .1)
+    text('STATUS: NOMINAL', 60, H - 70, 7, (.75, 1, .8))
+    text('ALL SYSTEMS GREEN', W - 80 - 17 * 6 * 4, H - 60, 4, (.75, 1, .8))
+    return img
+_vi = vitals_image(VW, VH)
+img_ = bpy.data.images.new('ReactorVitals', VW, VH, alpha=True)
+px_ = np.concatenate([_vi[::-1], np.ones((VH, VW, 1), np.float32)], 2).ravel(); img_.pixels.foreach_set(px_)
+img_.filepath_raw = os.path.join(OUT, 'reactor_vitals.png'); img_.file_format = 'PNG'; img_.save(); img_.pack()
+M_VIT = bpy.data.materials.new('VitalsScreen'); M_VIT.use_nodes = True; nt_ = M_VIT.node_tree; pv = nt_.nodes['Principled BSDF']
+ti = nt_.nodes.new('ShaderNodeTexImage'); ti.image = img_
+nt_.links.new(ti.outputs['Color'], pv.inputs['Base Color']); nt_.links.new(ti.outputs['Color'], pv.inputs['Emission Color'])
+pv.inputs['Emission Strength'].default_value = 3.0; pv.inputs['Roughness'].default_value = .25
+SX0, SX1 = -19.0, -13.0
+def rwall(x, z): return abs(outer_y(x, 1, z)) - .14
+sxs = np.linspace(SX0, SX1, 48)
+_b = [seg_at(float(x)) for x in sxs]
+SZ0 = ZA + 1.0; SZ1 = ZA + min(2.25, .82 * min(b_[2] for b_ in _b if b_)) if all(_b) else ZA + 2.1
+szs = np.linspace(SZ0, SZ1, 14)
+V = []; UV = []
+for i, x in enumerate(sxs):
+    for j, z in enumerate(szs): V.append((float(x), rwall(float(x), float(z)), float(z))); UV.append((1 - i / (len(sxs) - 1), j / (len(szs) - 1)))
+nz = len(szs); F = [(i * nz + j, i * nz + j + 1, (i + 1) * nz + j + 1, (i + 1) * nz + j) for i in range(len(sxs) - 1) for j in range(nz - 1)]
+o = mk('VitalsScreen', V, F, M_VIT); uvl = o.data.uv_layers.new(name='UVMap')
+for poly in o.data.polygons:
+    for li in poly.loop_indices: uvl.data[li].uv = UV[o.data.loops[li].vertex_index]
+o.data.polygons.foreach_set('use_smooth', [True] * len(o.data.polygons))
+wstrip('VitalsBezelTop', sxs, 1, SZ1, SZ1 + .05, .1, .2, M_RIB, lambda x, z: abs(outer_y(x, 1, SZ1)))
+wstrip('VitalsBezelBot', sxs, 1, SZ0 - .05, SZ0, .1, .2, M_RIB, lambda x, z: abs(outer_y(x, 1, SZ0)))
+dxs = np.linspace(SX0 + .3, SX1 - .3, 40)
+wstrip('ReactorDeskTop', dxs, 1, ZA + .72, ZA + .76, .12, .72, M_SEAT, lambda x, z: abs(outer_y(x, 1, ZA + .74)))
+wstrip('ReactorDeskEdge', dxs, 1, ZA + .69, ZA + .76, .7, .73, M_CYAN, lambda x, z: abs(outer_y(x, 1, ZA + .74)))
+wstrip('ReactorDeskModesty', dxs, 1, ZA + .3, ZA + .72, .12, .16, M_RIB, lambda x, z: abs(outer_y(x, 1, ZA + .5)))
+for k, x in enumerate(np.linspace(SX0 + .5, SX1 - .5, 6)):
+    x = float(x); yw = abs(outer_y(x, 1, ZA + .6))
+    Box(f'ReactorDeskBracket{k}', (x, yw - .4, ZA + .62), (.05, .55, .18), M_RIB, rot=(-18, 0, 0))
+for k, x in enumerate((-18.0, -16.0, -14.0)):
+    yw = abs(outer_y(x, 1, ZA + .76))
+    Box(f'ReactorKeys{k}', (x, yw - .42, ZA + .77), (.45, .16, .015), M_GRIP); Box(f'ReactorTrack{k}', (x + .32, yw - .42, ZA + .77), (.09, .07, .01), M_GRIP)
+    Cyl(f'ReactorStoolSeat{k}', (x, yw - 1.05, ZA + .66), .17, .05, M_SEAT, v=24); Cyl(f'ReactorStoolPost{k}', (x, yw - 1.05, ZA + .33), .025, .6, M_CHROME)
+    Cyl(f'ReactorStoolFoot{k}', (x, yw - 1.05, ZA + .02), .2, .03, M_RIB, v=24)
+for k, x in enumerate((-18.3, -16.4, -14.5)):   # flush computers in the starboard wall
+    yw = -abs(outer_y(x, -1, ZA + 1.35))
+    Box(f'WallPCFrame{k}', (x, yw + .025, ZA + 1.25), (1.0, .05, 1.1), M_RIB)
+    Box(f'WallPCScreen{k}', (x, yw + .052, ZA + 1.42), (.86, .01, .52), M_SCR if k != 1 else M_SCR2)
+    Box(f'WallPCKeys{k}', (x, yw + .052, ZA + .98), (.6, .01, .16), M_GRIP)
+    for j in range(4): Box(f'WallPCLed{k}{j}', (x - .3 + j * .2, yw + .053, ZA + .82), (.03, .006, .03), (M_GREEN, M_CYAN, M_AMBER, M_GREEN)[j])
+M_GREEN.node_tree.nodes['Principled BSDF'].inputs['Emission Strength'].default_value = 4
+print('MODEL v17 reactor room screen x', SX0, SX1, 'z', round(SZ0, 2), round(SZ1, 2), 'wall y', round(rwall(-16, SZ0), 2), round(rwall(-16, SZ1), 2))
+
+""", "phase_C3", "exec"), globals())
+except Exception:
+    import traceback; print("Error phase C3"); traceback.print_exc()
+try:
+    exec(compile(r"""# ---- C4. WORKSHOP on the gallery (arc 132-172): usable bench, true-scale tools in holders
+_nw = _rmp(('WorkBench', 'Robot'), exact=tuple(f'Tool{k}' for k in range(22)) + ('Crate0', 'Crate1'))
+ann('WsBenchTop', 6.25, 6.92, 133, 171, ZG + .86, ZG + .9, M_WOOD, step=1)
+ann('WsBenchEdge', 6.22, 6.25, 133, 171, ZG + .84, ZG + .9, M_RIB, step=1)
+ann('WsBenchShelf', 6.3, 6.9, 134, 155, ZG + .12, ZG + .15, M_RIB, step=1)
+for a in (133.6, 144.5, 155.5, 170.4):
+    for r_ in (6.29, 6.87): pbox(f'WsLeg{a}_{r_}', r_, a, ZG + .43, (.05, .05, .86), M_RIB)
+ann('WsDrawerBody', 6.28, 6.9, 156, 170, ZG + .02, ZG + .84, M_HD, step=1)
+for j in range(4):
+    z_ = ZG + .12 + j * .19
+    for a in (159.5, 166.5):
+        pbox(f'WsDrawer{j}_{a}', 6.27, a, z_ + .07, (.02, .78, .16), M_RIB); pbox(f'WsHandle{j}_{a}', 6.245, a, z_ + .11, (.025, .22, .02), M_CHROME)
+ann('WsPowerRail', 6.86, 6.9, 134, 170, ZG + .97, ZG + 1.08, M_RIB, step=1)
+for a in np.arange(136, 169, 4.0):
+    a = float(a); pbox(f'WsSocket{a:.0f}', 6.852, a, ZG + 1.025, (.012, .07, .07), M_WALL)
+    for e in (-.18, .18): pbox(f'WsPin{a:.0f}{e}', 6.846, a + e, ZG + 1.03, (.004, .008, .016), M_SEAT)
+    pbox(f'WsSwitch{a:.0f}', 6.846, a + .55, ZG + 1.025, (.004, .02, .03), M_RED)
+# bolted bench vise at a 136 (jaws, screw, T-handle, 4 bolts)
+VA = 136.5; VR = 6.36
+pbox('WsViseBase', VR, VA, ZG + .915, (.2, .16, .03), M_ORNG)
+for e1 in (-.06, .06):
+    for e2 in (-.45, .45): pbox(f'WsViseBolt{e1}{e2}', VR + e1, VA + e2, ZG + .935, (.025, .025, .015), M_CHROME)
+pbox('WsViseBody', VR + .02, VA, ZG + .98, (.16, .1, .1), M_ORNG)
+pbox('WsViseJawFixed', VR + .09, VA, ZG + 1.06, (.03, .14, .07), M_RIB); pbox('WsViseJawMove', VR - .02, VA, ZG + 1.06, (.03, .14, .07), M_RIB)
+pbox('WsViseScrew', VR - .12, VA, ZG + 1.0, (.18, .02, .02), M_CHROME); pbox('WsViseHandle', VR - .21, VA, ZG + 1.0, (.015, .2, .015), M_CHROME)
+# F-clamp on the bench edge at a 150
+pbox('WsClampBar', 6.27, 150, ZG + .86, (.012, .025, .32), M_CHROME)
+pbox('WsClampJawTop', 6.33, 150, ZG + .99, (.13, .03, .02), M_ORNG); pbox('WsClampJawBot', 6.33, 150, ZG + .72, (.13, .03, .02), M_ORNG)
+pbox('WsClampScrew', 6.36, 150, ZG + .66, (.012, .012, .1), M_CHROME); pbox('WsClampGrip', 6.36, 150, ZG + .58, (.03, .03, .09), M_RED)
+# cordless-style drill on the bench, cable to the wall socket
+pbox('WsDrillBody', 6.5, 160.5, ZG + .97, (.2, .06, .07), M_ORNG); pbox('WsDrillGrip', 6.55, 160.5, ZG + .91, (.045, .045, .1), M_GRIP)
+pbox('WsDrillChuck', 6.39, 160.5, ZG + .97, (.04, .035, .035), M_CHROME); pbox('WsDrillBit', 6.35, 160.5, ZG + .97, (.07, .006, .006), M_CHROME)
+strip('WsDrillCable', [pol(6.56, 160.5, ZG + .91), pol(6.7, 161.5, ZG + .905), pol(6.82, 162.5, ZG + .93), pol(6.846, 164, ZG + 1.025)], M_CABLE, .006)
+# task lamp at a 146: base, two arm segments, head with a down light
+pbox('WsLampBase', 6.82, 146, ZG + .91, (.1, .1, .02), M_RIB)
+pbox('WsLampArm1', 6.78, 146, ZG + 1.1, (.02, .02, .4), M_RIB, tilt=-12); pbox('WsLampArm2', 6.6, 146, ZG + 1.32, (.02, .02, .4), M_RIB, tilt=-70)
+pbox('WsLampHead', 6.42, 146, ZG + 1.28, (.12, .12, .07), M_RIB); pbox('WsLampLens', 6.42, 146, ZG + 1.24, (.1, .1, .01), M_RING)
+Area('WsTaskLight', pol(6.42, 146, ZG + 1.22), .1, 25, (1, .95, .85))
+# true-scale hand tools on the pegboard, each on its own hook
+TZ = ZG + 1.75
+def hook(nm, a, z): pbox(nm + 'Hook', 6.875, a, z, (.05, .01, .01), M_CHROME)
+pbox('WsHammerHandle', 6.88, 135.5, TZ - .1, (.03, .035, .3), M_WOOD); pbox('WsHammerHead', 6.88, 135.5, TZ + .06, (.03, .11, .03), M_RIB); hook('WsHammer', 135.5, TZ + .09)
+for k in range(4):
+    a = 137.5 + k * .55; pbox(f'WsDriverGrip{k}', 6.88, a, TZ - .02, (.028, .028, .1), (M_ORNG, M_RED, M_ORNG, M_RED)[k]); pbox(f'WsDriverShaft{k}', 6.88, a, TZ - .14, (.007, .007, .13 + k * .02), M_CHROME); hook(f'WsDriver{k}', a, TZ + .04)
+for k in range(5):
+    a = 140.5 + k * .55; L_ = .14 + k * .025; pbox(f'WsWrench{k}', 6.885, a, TZ - L_ / 2, (.006, .022 + k * .003, L_), M_CHROME); hook(f'WsWrench{k}', a, TZ + .01)
+for e in (-6, 6): pbox(f'WsPliers{e}', 6.885, 144.2 + e * .03, TZ - .09, (.01, .018, .19), M_RED if e < 0 else M_CHROME, tilt=e)
+hook('WsPliers', 144.2, TZ + .02)
+pbox('WsSawBlade', 6.89, 148.5, TZ - .05, (.003, .36, .1), M_CHROME); pbox('WsSawHandle', 6.885, 147.0, TZ - .03, (.025, .1, .12), M_WOOD); hook('WsSaw', 148.5, TZ + .02)
+pbox('WsLevel', 6.885, 152.5, TZ - .03, (.025, .6, .045), M_ORNG); hook('WsLevel', 152.5, TZ + .005)
+pbox('WsSquare', 6.89, 156, TZ - .1, (.004, .03, .3), M_CHROME); pbox('WsSquareB', 6.89, 156.7, TZ - .235, (.004, .17, .03), M_CHROME); hook('WsSquare', 156, TZ + .06)
+pbox('WsTape', 6.875, 159, TZ - .05, (.04, .075, .075), M_AMBER); hook('WsTape', 159, TZ)
+for k in range(3): pbox(f'WsBin{k}', 6.84, 162 + k * 2.6, TZ - .05, (.12, .26, .12), (M_ORNG, M_CRATE, M_ORNG)[k])
+pbox('WsCableReel', 6.86, 167.5, TZ - .1, (.06, .26, .26), M_RIB); strip('WsReelCable', [pol(6.84, 167.5, TZ - .2), pol(6.84, 168.4, ZG + 1.2), pol(6.852, 168.8, ZG + 1.03)], M_CABLE, .006)
+# shop stool at working height (seat top ZG+0.68)
+Cyl('WsStoolSeat', pol(5.85, 143, ZG + .655), .17, .05, M_SEAT, v=24); Cyl('WsStoolPost', pol(5.85, 143, ZG + .33), .025, .6, M_CHROME)
+Cyl('WsStoolFoot', pol(5.85, 143, ZG + .02), .2, .03, M_RIB, v=24); Tor('WsStoolRing', pol(5.85, 143, ZG + .3), .15, .01, M_CHROME, ms=24, ns=6)
+print('MODEL v17 workshop rebuilt, removed', _nw)
+
+""", "phase_C4", "exec"), globals())
+except Exception:
+    import traceback; print("Error phase C4"); traceback.print_exc()
+try:
+    exec(compile(r"""# ---- C5. h5: the lead-glass windows become real clear panes (thin, clear, low-iron glass)
+_ng = 0
+for o in bpy.data.objects:
+    if o.name.startswith('LeadGlass'):
+        o.data.materials.clear(); o.data.materials.append(M_CLEAR); o.scale = (.33, 1, 1); _ng += 1
+print('MODEL v17 clear panes', _ng)
+print('MODEL v17 phase C done')
+
+""", "phase_C5", "exec"), globals())
+except Exception:
+    import traceback; print("Error phase C5"); traceback.print_exc()
 # ---- A4. outside-hull check: interior objects (centre inside the shell) must not poke through hull / blister / keel / sponsons
 SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelShell', 'SkylightGlass'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
@@ -2097,7 +2412,7 @@ for o in list(bpy.data.objects):
                 if not outside_pts(sub + np.array([0, dy, dz * (0 if dy else 1)])).any():
                     o.location.y += dy; o.location.z += dz * (0 if dy else 1); moved = True; break
             if moved: _fix += 1; continue
-        _off.append((o.name, round(float(out.mean()), 2), round(float(dim), 2)))
+        _off.append((o.name, round(float(out.mean()), 2), round(float(dim), 2), np.round(P_.min(0), 2).tolist(), np.round(P_.max(0), 2).tolist(), np.round(sub[out][:3], 2).tolist()))
     except Exception as e: print('Error hullcheck', o.name, e)
 print('MODEL v17 outside-hull: auto-inset', _fix, 'offenders', len(_off))
 for t in sorted(_off, key=lambda t: -t[1])[:60]: print('MODEL v17 OFFENDER', t)
@@ -2110,7 +2425,7 @@ if os.path.exists(hdr):
 bg.inputs['Strength'].default_value = .9
 sun = bpy.data.objects.new('Sun', bpy.data.lights.new('Sun', 'SUN')); col.objects.link(sun); sun.data.energy = 3; sun.data.color = (1, .87, .72)
 sun.rotation_euler = (math.radians(50), 0, math.radians(135))
-gp = bpy.ops.mesh.primitive_plane_add(size=400, location=(0, 0, -5.5))   # v17: ground at -5.5 (ramp foot); ground = bpy.context.active_object; ground.name = 'Pad'
+gp = bpy.ops.mesh.primitive_plane_add(size=400, location=(0, 0, -5.5)); ground = bpy.context.active_object; ground.name = 'Pad'   # v17: ground at -5.5 (ramp foot)
 gm = pbsdf('Pad', (.1, .1, .11), .2, .6); ground.data.materials.append(gm)
 cam = bpy.data.objects.new('Cam', bpy.data.cameras.new('Cam')); col.objects.link(cam); sc.camera = cam
 r = sc.render; r.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = SPP; sc.cycles.use_denoising = True
@@ -2142,7 +2457,11 @@ def clear_cam(name, loc, tgt):
             return tuple(L)
         L = L + (T - L).normalized() * .35
     print('Error camcheck', name, 'still inside'); return tuple(L)
-def shot(name, frame, loc, tgt, lens=28, cut=0, res=(1600, 900), pad=True):
+def shot(name, *a, **k):
+    try: _shot(name, *a, **k)
+    except Exception:
+        import traceback; print('Error shot', name); traceback.print_exc()
+def _shot(name, frame, loc, tgt, lens=28, cut=0, res=(1600, 900), pad=True):
     sc.frame_set(frame); set_cut2(cut); ground.hide_render = not pad
     if not cut: loc = clear_cam(name, loc, tgt)
     look(loc, tgt, lens)
@@ -2259,7 +2578,11 @@ if DRY:
     shot('c1_corridor_from_hall', 160, (HC.x + HR - 2.6, 0, Z0 + 1.65), (CX1 + 1, 0, Z0 + 1.2), 18)
     shot('c2_cabin', 160, (7.9, 1.15, Z0 + 1.75), (5.4, 3.3, Z0 + .5), 16)
     shot('h5_reactor_window', 240, (-7.6, 1.9, Z0 + 1.9), (EX, 1.0, 1.7), 24)
-    shot('r1_hybrid_core', 240, (XSB + .2, -.6, ZA + 2.1), (EX, 0, zc_ - .1), 18)
+    shot('r1_hybrid_core', 240, (EX + 1.25, -.85, PT + .75), (EX, 0, PT + .17), 32)
+    shot('r2_reactor_room', 240, (EX + 3.4, -1.5, ZA + 1.75), (EX - 2.2, 1.6, ZA + 1.25), 16)
+    shot('w1_workshop', 200, pol(4.7, 150, ZG + 1.65), pol(6.75, 151, ZG + 1.05), 20)
+    shot('br1_bridge_lobby', 200, (BR + 1.4, -.5, ZB + 1.7), (px + .5, .2, ZB + .7), 16)
+    shot('br2_bridge_pilots', 200, (LX + .2, 1.2, ZB + 1.65), (px + 1.6, -.2, ZB + .9), 20)
     topdown('t1_topdown_section')
     save_blend()
     try: export_glbs()
