@@ -2116,7 +2116,7 @@ Cyl('LobbyTableLeg', (LX, 0, ZB + .24), .035, .42, M_CHROME); Cyl('LobbyTableBas
 # low sofas against both walls (x 14.7-17.3), front edge kept >= table + walkway
 sx_ = np.linspace(14.7, 17.3, 14)
 for s in (-1, 1):
-    wl = lambda x, z: bwall(x, ZB + .85)
+    wl = lambda x, z: min(bwall(x, ZB + .06), bwall(x, ZB + .85))
     front = min(wl(float(x), 0) for x in sx_) - .7
     if front < TR + WALK: print('Error lobby tight: sofa front', round(front, 2))
     wstrip(f'LobbySofaBase{s}', sx_, s, ZB + .05, ZB + .3, .05, .72, M_HD, wl)
@@ -2129,7 +2129,7 @@ for s in (-1, 1):
 for s in (-1, 1):
     for k, (x0, x1) in enumerate(((13.2, 14.6), (17.6, 19.0))):
         xc = (x0 + x1) / 2; D = .45
-        wy = min(bwall(x, z) for x in (x0, xc, x1) for z in (ZB + .2, ZB + 1.0, ZB + 1.8))
+        wy = min(bwall(x, z) for x in (x0, xc, x1) for z in (ZB + .03, ZB + .2, ZB + 1.0, ZB + 1.8))
         yc = s * (wy - D / 2 - .03); top = min(ZB + 2.0, (ceil_at(xc, abs(yc) + D / 2) or ZB + 2.1) - .08)
         nm = f'Rack{s}{k}'
         for xx in (x0 + .03, x1 - .03):
@@ -2376,6 +2376,40 @@ print('MODEL v17 phase C done')
 """, "phase_C5", "exec"), globals())
 except Exception:
     import traceback; print("Error phase C5"); traceback.print_exc()
+try:
+    exec(compile(r"""# ---- C6. clamp bridge floor/skirt/lobby vertices inside the hull; h5 clear panes (re)built
+def clamp_to_hull(o, m=.04):
+    if o is None or o.type != 'MESH': return 0
+    Mw = o.matrix_world; Mi = Mw.inverted(); n = 0
+    for v in o.data.vertices:
+        p = Mw @ v.co
+        if abs(p.y) < .25: continue
+        h = hdist((p.x, 0, p.z), (0, 1 if p.y > 0 else -1, 0))
+        if h is None: continue
+        lim = h - m
+        if abs(p.y) > lim:
+            p.y = math.copysign(max(lim, .2), p.y); v.co = Mi @ p; n += 1
+    o.data.update(); return n
+_cl = {}
+for o in list(bpy.data.objects):
+    if o.name in ('DeckBridge', 'BridgePlate', 'BridgeSkirt-1', 'BridgeSkirt1') or o.name.startswith(('LobbySofa', 'SideStation', 'Rack')):
+        _cl[o.name] = clamp_to_hull(o)
+for nm_ in ('BridgeRunner-1', 'BridgeRunner1'):
+    o = bpy.data.objects.get(nm_)
+    if o:
+        for v in o.data.vertices:
+            if (o.matrix_world @ v.co).x > 25.4: v.co = o.matrix_world.inverted() @ Vector((25.4, (o.matrix_world @ v.co).y, (o.matrix_world @ v.co).z))
+print('MODEL v17 clamp', {k: v for k, v in _cl.items() if v})
+_lg = [o for o in bpy.data.objects if o.name.startswith('LeadGlass')]
+print('MODEL v17 h5 near-window objects', [o.name for o in bpy.data.objects if -12.8 < o.location.x < -9.4 and 1.0 < abs(o.location.y) < 3.0 and 0 < o.location.z < 2.6][:30])
+for o in _lg: _rm(o)
+for s in (-1, 1):
+    yc = s * (WY0_ + WY1_) / 2; ww = WY1_ - WY0_
+    for xx in (-11.0, -11.6): Box(f'H5Pane{s}{xx:.1f}', (xx, yc, (WZ0 + WZ1) / 2), (.02, ww - .02, WZ1 - WZ0 - .02), M_CLEAR)
+print('MODEL v17 h5 panes rebuilt (old', len(_lg), ')')
+""", "phase_C6", "exec"), globals())
+except Exception:
+    import traceback; print("Error phase C6"); traceback.print_exc()
 # ---- A4. outside-hull check: interior objects (centre inside the shell) must not poke through hull / blister / keel / sponsons
 SHELL = ['Hull', 'HallBlister', 'HallBlisterBelly', 'KeelShell', 'SkylightGlass'] + [o.name for o in bpy.data.objects if o.name.endswith('Sponson')]
 bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
@@ -2419,6 +2453,10 @@ for t in sorted(_off, key=lambda t: -t[1])[:60]: print('MODEL v17 OFFENDER', t)
 print('MODEL v17 pass done')
 
 # ------------------------------------------------------------------ world, camera, render
+def _alive(o):
+    try: o.name; return True
+    except ReferenceError: return False
+CEIL[:] = [o for o in CEIL if _alive(o)]; print('MODEL CEIL alive', len(CEIL))
 w = bpy.data.worlds.new('W'); sc.world = w; w.use_nodes = True; nt = w.node_tree; bg = nt.nodes['Background']
 if os.path.exists(hdr):
     env = nt.nodes.new('ShaderNodeTexEnvironment'); env.image = bpy.data.images.load(hdr); nt.links.new(env.outputs['Color'], bg.inputs['Color'])
@@ -2583,7 +2621,8 @@ if DRY:
     shot('w1_workshop', 200, pol(4.7, 150, ZG + 1.65), pol(6.75, 151, ZG + 1.05), 20)
     shot('br1_bridge_lobby', 200, (BR + 1.4, -.5, ZB + 1.7), (px + .5, .2, ZB + .7), 16)
     shot('br2_bridge_pilots', 200, (LX + .2, 1.2, ZB + 1.65), (px + 1.6, -.2, ZB + .9), 20)
-    topdown('t1_topdown_section')
+    try: topdown('t1_topdown_section')
+    except Exception as e: print('Error topdown', e)
     save_blend()
     try: export_glbs()
     except Exception as e: print('Error glb', e)
