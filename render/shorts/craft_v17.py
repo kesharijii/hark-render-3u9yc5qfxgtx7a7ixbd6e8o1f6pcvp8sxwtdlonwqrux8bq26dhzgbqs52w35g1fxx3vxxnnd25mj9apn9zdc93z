@@ -736,8 +736,8 @@ for o in [o for o in bpy.data.objects if o.name.startswith('Exhaust')]:
     pl = bpy.context.active_object; pl.name = 'Plume'; pl.data.materials.append(M_PLUME)
     ld = bpy.data.lights.new('NozL', 'POINT'); ld.color = (.4, .7, 1); lo = bpy.data.objects.new('NozL', ld); col.objects.link(lo); lo.location = loc - Vector((.6, 0, 0))
     for f, v in ((1, 0), (150, 0), (200, 2500)): ld.energy = v; ld.keyframe_insert('energy', frame=f)
-for o in bpy.data.objects:
-    if o.name.startswith('Thruster'):
+for o in [o for o in bpy.data.objects if o.name.startswith('Thruster') and not o.name.startswith('ThrusterRing')]:   # v17b-4: snapshot (rings are named Thruster*, live iteration looped forever)
+    if True:
         for k in range(5):  # cooling rings on the nozzles
             bpy.ops.mesh.primitive_torus_add(major_radius=o.dimensions.y / 2 * (.98 - k * .04), minor_radius=.035, location=o.location + Vector((-.6 + k * .3, 0, 0)), rotation=(0, math.radians(90), 0))
             bpy.context.active_object.data.materials.append(M_GOLD if k == 0 else M_GRBD); bpy.context.active_object.name = f'ThrusterRing{o.name}_{k}'   # v17b: named (intended exterior)
