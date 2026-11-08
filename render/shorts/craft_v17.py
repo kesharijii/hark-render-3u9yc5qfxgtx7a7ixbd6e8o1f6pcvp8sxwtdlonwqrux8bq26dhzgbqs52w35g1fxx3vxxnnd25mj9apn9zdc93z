@@ -2934,7 +2934,22 @@ def topdown(name, z=1.38, res=(1600, 1000)):
     for o in hid: o.hide_render = False
     for o in CEIL: o.hide_render = False
 print('TIMING stills start', round(_tm0.time() - _TS))
-if DRY:
+if DRY == '23':   # v17b-5: the user's 23-still list on the current look (no GLB/blend export)
+    sc.cycles.samples = SPP; raised(False)
+    S23 = [('01_exterior', 120, (34, -30, 6), (0, 0, 0), 30, False), ('02_rear_exterior', 200, (-52, -20, 5), (0, 0, 0), 32, False),
+     ('03_underside', 120, (-3.0, -2.5, -26), (-3.0, 0, -2.0), 28, False), ('04_bridge', 200, (BR + 1.4, -.5, ZB + 1.7), (px + .5, .2, ZB + .7), 16, True),
+     ('05_grand_hall_a', 120, (2.4, -1.8, Z0 + 1.7), (-7.5, .8, Z0 + .5), 18, True), ('06_grand_hall_bc', 120, (-5.0, 1.5, Z0 + 1.7), (6.0, -.5, Z0 + .8), 18, True),
+     ('07_hall_gallery', 120, (4.5, -4.5, Z0 + 5.0), (-4.0, 3.0, Z0 + 3.0), 16, True), ('08_hall_dome', 120, (0, -1.0, Z0 + 1.6), (.3, 0, Z0 + 8.5), 14, True),
+     ('09_lounge_garden', 120, (-4.0, -5.0, Z0 + 1.3), (4.0, 4.5, Z0 + .6), 18, True),
+     ('10_gallery_pod_door', 160, (DOOR[1] + 1.4, yc_, ramp_floor(DOOR[1] + 1.4) + 1.65), (DOOR[0] - 2, yc_ + .6, ramp_floor(DOOR[0]) + 1.4), 16, True),
+     ('11_mess_pod', 215, (PX1 - .5, PY0 + .4, FP + 1.8), (PX0, PY1 - .8, FP + .6), 15, True), ('12_reactor_front', 240, (EX + 3.4, -1.5, ZA + 1.75), (EX - 2.2, 1.6, ZA + 1.25), 16, True),
+     ('13_reactor_high', 240, (EX + 3.0, -1.0, ZA + 3.2), (EX - 1.0, .5, ZA + .8), 16, True)]
+    for nm, fr, lo, tg, ln, pd in S23: shot(nm, fr, lo, tg, ln, pad=pd)
+    acc = 1
+    for k, (nm, cap, n, *_) in enumerate(TOUR):
+        f = acc + (n * 3) // 4 if nm in ('mess', 'bridge') else acc + n // 2; acc += n
+        nm_, sf, lo, tg, ln = tour_at(f); shot(f'{14 + k:02d}_tour_{nm}', sf, tuple(lo), tuple(tg), ln, pad=True)
+elif DRY:
     sc.cycles.samples = SPP
     raised(False)
     shot('x1_exterior_below', 120, (30, -34, -10), (0, 0, -2.5), 30, pad=False)
