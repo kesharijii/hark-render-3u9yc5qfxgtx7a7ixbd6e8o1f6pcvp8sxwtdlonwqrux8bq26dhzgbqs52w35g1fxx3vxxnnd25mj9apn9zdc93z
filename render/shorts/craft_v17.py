@@ -2934,7 +2934,31 @@ def topdown(name, z=1.38, res=(1600, 1000)):
     for o in hid: o.hide_render = False
     for o in CEIL: o.hide_render = False
 print('TIMING stills start', round(_tm0.time() - _TS))
-if DRY == '23':   # v17b-5: the user's 23-still list on the current look (no GLB/blend export)
+def _ctr(prefs):
+    for pf in prefs:
+        os_ = [o for o in bpy.data.objects if o.name.startswith(pf) and o.type == 'MESH' and not o.hide_render]
+        if os_:
+            o = os_[0]; c = sum((o.matrix_world @ Vector(v) for v in o.bound_box), Vector()) / 8; print('MODEL autocam', pf, '->', o.name, tuple(round(x, 2) for x in c)); return c
+    print('Error autocam none', prefs); return None
+def autocam(name, frame, prefs=None, pt=None, dz=1.0, lens=16, rank=0, look_from=False, reach=4.5):
+    c = Vector(pt) if pt else _ctr(prefs)
+    if c is None: return
+    dg = bpy.context.evaluated_depsgraph_get(); e = c + Vector((0, 0, dz)); res = []
+    for k in range(24):
+        a = 2 * math.pi * k / 24; d = Vector((math.cos(a), math.sin(a), 0))
+        hit, p_, *_ = sc.ray_cast(dg, e, d, distance=12); res.append(((p_ - e).length if hit else 12, d))
+    res.sort(key=lambda t: -t[0]); L, d = res[min(rank, len(res) - 1)]
+    if look_from: shot(name, frame, tuple(e), tuple(e + d * min(L, 8) - Vector((0, 0, .7))), lens)
+    else: shot(name, frame, tuple(e + d * max(min(L, reach) - .35, .6)), tuple(c), lens)
+if DRY == '6':   # v17b-6: reshoot the 6 failed stills with ray-placed cameras (current v17 room positions)
+    sc.cycles.samples = SPP; raised(False)
+    autocam('07_hall_gallery', 120, pt=(-2.5, -(HR - .9), ZG), dz=1.6, lens=16, look_from=True)
+    autocam('10_gallery_pod_door', 160, ('PodDoor', 'DoorSeam', 'Door'), dz=.3, lens=18)
+    autocam('11_mess_pod', 215, ('MessTable', 'MessPed', 'MessThreshold'), dz=1.3, lens=16)
+    autocam('19_tour_mess', 215, ('MessTable', 'MessPed', 'MessThreshold'), dz=1.2, lens=16, rank=2)
+    autocam('20_tour_medbay', 215, ('MedBed', 'MedBase', 'MedThreshold'), dz=1.2, lens=16)
+    autocam('21_tour_cabin', 160, ('Nightstand', 'Bunk', 'Pillow'), dz=1.1, lens=16)
+elif DRY == '23':   # v17b-5: the user's 23-still list on the current look (no GLB/blend export)
     sc.cycles.samples = SPP; raised(False)
     S23 = [('01_exterior', 120, (34, -30, 6), (0, 0, 0), 30, False), ('02_rear_exterior', 200, (-52, -20, 5), (0, 0, 0), 32, False),
      ('03_underside', 120, (-3.0, -2.5, -26), (-3.0, 0, -2.0), 28, False), ('04_bridge', 200, (BR + 1.4, -.5, ZB + 1.7), (px + .5, .2, ZB + .7), 16, True),
