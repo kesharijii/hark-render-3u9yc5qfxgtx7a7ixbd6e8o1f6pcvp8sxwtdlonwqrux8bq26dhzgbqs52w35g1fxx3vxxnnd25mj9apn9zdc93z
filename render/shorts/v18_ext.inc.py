@@ -165,7 +165,7 @@ def zones(W_, N_, convex=None, grime=None, is_hull=True):
         upper = up > .25
         paint[(Ya > HYMAX - .9)] = 1                                                     # wingtip tips
         paint[upper & (Ya < .28) & (X > 12.5) & (X < 17.0)] = 1                           # short spine stripe near the nose
-        glow[upper & (Ya > 5.0) & (Ya < HYMAX - 1.2) & (dlead > 1.0) & (dlead < 1.13)] = 1  # thin teal edge light line
+        # v18-2: the vertex-painted wing edge line read as blotchy dashes; teal lines live on the chines + sponson edges instead
     skin = np.clip(1 - cer - cc - gold, 0, 1)
     heat = np.clip((Ya > 4.5) * _ss(2.4, .9, dlead) + _ss(HXMAX - 6.5, HXMAX - 4.5, X) * (1 - nose), 0, 1) * (1 - gold) * (1 - cer * .5)
     seam = (np.abs(((X + .3) / 2.4) % 1 - .5) > .485) | (np.abs(((W_[:, 1] + .9) / 3.0) % 1 - .5) > .488)
@@ -255,7 +255,8 @@ def v18_hull_shader(m, back_attr='Livery17'):
     _, zn = _attr(nt, 'Zone'); _, wr = _attr(nt, 'Wear'); _, gl = _attr(nt, 'Glow')
     cer, cc, gold = zn[0], zn[1], zn[2]
     za = _nd(nt, 'ShaderNodeAttribute', attribute_name='Zone', attribute_type='GEOMETRY'); paint = za.outputs['Alpha']
-    convex, soot, heat, grm = wr[0], wr[1], wr[2], wr[3]; glow = gl[0]
+    wa = _nd(nt, 'ShaderNodeAttribute', attribute_name='Wear', attribute_type='GEOMETRY')
+    convex, soot, heat, grm = wr[0], wr[1], wr[2], wa.outputs['Alpha']; glow = gl[0]
     skin = _mth(nt, 'SUBTRACT', 1.0, _sum(nt, cer, cc, gold), clamp=True)
     nb = _noise(nt, _mapv(nt, pos, (.35, 25, 25)), 3.0, 6.0, .6).outputs['Fac']                 # brushing along the panels (x)
     def gridline(c, s, w):
@@ -427,11 +428,11 @@ def obox(name, c, ex, ey, ez, hs, mat):
     o = mk(name, V_, F_, mat); o.data.update(); return o
 def hull_hit(x, y, zfrom=14.0, d=(0, 0, -1)):
     dg_ = bpy.context.evaluated_depsgraph_get(); o_ = Vector((x, y, zfrom))
-    for _ in range(4):
+    for _ in range(16):
         hit, p_, n_, fi, ob, _m = sc.ray_cast(dg_, o_, Vector(d))
         if not hit: return None
         if ob is not None and ob.name == 'Hull': return p_, n_
-        o_ = p_ + Vector(d) * .01
+        o_ = p_ + Vector(d) * .03
     return None
 def winglets():
     for o in [o for o in bpy.data.objects if o.name.startswith('Winglet')]: bpy.data.objects.remove(o)
