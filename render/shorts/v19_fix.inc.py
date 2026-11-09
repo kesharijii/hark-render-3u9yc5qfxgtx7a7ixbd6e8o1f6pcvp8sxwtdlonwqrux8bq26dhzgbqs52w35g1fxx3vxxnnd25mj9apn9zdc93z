@@ -40,36 +40,50 @@ def v19_dome():
     if bl:
         for i, s_ in enumerate(bl.material_slots):
             if i != 1: s_.material = M18_TI
-    # fairing: tangent off the dome (r = ROUT-1.2) down into the hull skin (r = ROUT+3), hermite in r, never below the hull
-    NA, NR = 180, 22; V = []; F = []; lo = 0
+    # fairing: tangent off the dome (r = ROUT-1.2) down into the hull skin (r = ROUT+3); hull heights smoothed round the ring so no spikes
+    NA, NR = 180, 22; L = ROUT + FW19 - R19A
     dd = lambda r: (ZDO - ZSO) * (-r / ROUT ** 2) / math.sqrt(max(1e-4, 1 - (r / ROUT) ** 2))
     z1, s1 = dome_out(R19A), dd(R19A)
+    RS = [R19A + L * i / (NR - 1) for i in range(NR)]
+    H = np.full((NA, NR), np.nan)
     for j in range(NA):
-        a = j * 360.0 / NA; t = math.radians(a); dx, dy = math.cos(t), math.sin(t)
-        r2 = ROUT + FW19; z2, n2 = _hz(HC.x + r2 * dx, HC.y + r2 * dy)
-        if z2 is None: z2, s2 = ZSO - 1.0, 0.0
-        else: s2 = -(n2.x * dx + n2.y * dy) / max(abs(n2.z), .2)
-        L = r2 - R19A
-        for i in range(NR):
-            u = i / (NR - 1); r = R19A + L * u
+        t = math.radians(j * 360.0 / NA); dx, dy = math.cos(t), math.sin(t)
+        for i, r in enumerate(RS):
+            if r >= ROUT - .05:
+                zh, _n = _hz(HC.x + r * dx, HC.y + r * dy)
+                if zh is not None and zh < ZDO: H[j, i] = zh
+    lo = int(np.isnan(H[:, -1]).sum())
+    for i in range(NR):          # fill gaps round each ring, then a wide circular smooth
+        col = H[:, i]; ok = ~np.isnan(col)
+        if ok.sum() == 0: continue
+        idx = np.arange(NA); col = np.interp(idx, idx[ok], col[ok], period=NA)
+        k = np.ones(15) / 15; H[:, i] = np.convolve(np.concatenate([col[-7:], col, col[:7]]), k, 'valid')
+    V = []; F = []
+    for j in range(NA):
+        t = math.radians(j * 360.0 / NA); dx, dy = math.cos(t), math.sin(t)
+        z2 = H[j, -1] if not np.isnan(H[j, -1]) else ZSO - 1.0
+        s2 = float(np.clip((H[j, -1] - H[j, -3]) / (RS[-1] - RS[-3]), -1.2, 1.2)) if not np.isnan(H[j, -3]) else 0.0
+        for i, r in enumerate(RS):
+            u = i / (NR - 1)
             h00, h10, h01, h11 = 2*u**3 - 3*u**2 + 1, u**3 - 2*u**2 + u, -2*u**3 + 3*u**2, u**3 - u**2
             z = h00 * z1 + h10 * L * s1 + h01 * z2 + h11 * L * s2
             if r < ROUT: z = max(z, dome_out(r) + .01)
-            else:
-                zh, _n = _hz(HC.x + r * dx, HC.y + r * dy)
-                if zh is not None: z = max(z, zh + .015)
-                else: lo += 1
-            V.append((HC.x + r * dx, HC.y + r * dy, z))
+            if not np.isnan(H[j, i]): z = max(z, H[j, i] + .03)
+            V.append([HC.x + r * dx, HC.y + r * dy, z])
+    Z = np.array([v[2] for v in V]).reshape(NA, NR)
+    for _ in range(3): Z[:, 1:-1] = .25 * np.roll(Z[:, 1:-1], 1, 0) + .25 * np.roll(Z[:, 1:-1], -1, 0) + .5 * Z[:, 1:-1]
+    for j in range(NA):
+        for i in range(NR): V[j * NR + i][2] = float(Z[j, i])
     for j in range(NA):
         for i in range(NR - 1):
             a_, b_ = j * NR + i, ((j + 1) % NA) * NR + i; F.append((a_, a_ + 1, b_ + 1, b_))
-    mk('DomeFairing', V, F, M18_TI, smooth=True); print('MODEL v19 dome fairing verts', len(V), 'no-hull samples', lo, 'dome top', round(z1, 2), 'slope', round(s1, 2))
+    mk('DomeFairing', [tuple(v) for v in V], F, M18_TI, smooth=True); print('MODEL v19 dome fairing verts', len(V), 'no-hull outer samples', lo, 'dome top', round(z1, 2), 'slope', round(s1, 2))
 
 def v19_clean_top():
     keep = ('Hull', 'HallBlister', 'DomeFairing', 'Skylight', 'HallDome', 'Pad', 'Cam', 'Sun')
     gone = []
     for o in list(bpy.data.objects):
-        if o.type != 'MESH' or o.name.startswith(keep): continue
+        if o.type != 'MESH' or o.name.startswith(keep) or not o.name.startswith(('X', 'Strobe')): continue
         c, z0_, z1_, ws = _bbc(o); r_ = math.hypot(c.x - HC.x, c.y - HC.y)
         if r_ > ROUT + FW19 + 1.0 or c.z < ZSO - 2.5: continue
         if r_ < ROUT: on = SKY_R + .2 < r_ and c.z > dome_out(r_) - .15
