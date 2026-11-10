@@ -1,31 +1,77 @@
 {
  "language": "English",
- "voice_instruct": "Middle-aged male real estate broker, charming fast-talking salesman, warm baritone, big confident grin in the voice, theatrical enthusiasm, comic timing with little dramatic pauses, slightly cheeky, clear diction, neutral accent.",
+ "voice_instruct": "Middle-aged male real estate broker, charming fast-talking salesman, warm baritone, big confident grin in the voice, theatrical enthusiasm, comic timing with little dramatic pauses, slightly cheeky, clear diction, neutral General American accent, international.",
  "ref_text": "Friends, friends, come in, come in! Have I got a deal for you. Location, location, location, and this one has all three!",
  "gap": 0.0,
  "lines": [
-  {"text": "Ladies and gentlemen, welcome to the hottest listing in the galaxy. Fifty-eight metres of pure titanium luxury. Fully furnished, ocean view, and yes, before you ask, it does fly. Parking? It IS the parking."},
-  {"text": "Look at that underside. Ceramic tiles, darling. Most homes have a basement. This one has re-entry protection."},
-  {"text": "From the top, a clean roof. No leaks, no pigeons, and the nearest neighbour is roughly four light years away."},
-  {"text": "And the crown jewel, the dome. Freshly blended, smooth as butter. My architect cried. I cried. The bank also cried, but for other reasons."},
-  {"text": "Engines! Gold foil, fusion powered. Zero to Mars before your chai gets cold."},
-  {"text": "The nose, carbon fibre. Aerodynamic, and frankly, more attractive than my cousin."},
-  {"text": "Wings on both sides. No extra charge. Try getting that from a two BHK."},
-  {"text": "Your private entrance. A glowing hatch with stairs. Guests will think you are very important. Let them."},
-  {"text": "The entry deck. Room for luggage, bicycles, or the in-laws, if they promise to stay down here."},
-  {"text": "And now, the heart of the home. A fourteen metre central hall. Flat floor, no trip hazards, I checked personally. Twice. Doors to every room, like a palace, but with fewer stairs. Well. Some stairs."},
-  {"text": "Look up. Seven and a half metres of ceiling. You could fit a giraffe in here. Please do not fit a giraffe in here."},
-  {"text": "The grand staircase. Curved, glass railings. Perfect for dramatic entrances."},
-  {"text": "Upstairs, the gallery. A full walking ring with a library, a lab, a workshop, and an ops room. Books, science, tools, and a room for pressing buttons. Everything a man needs to avoid his chores."},
-  {"text": "The workshop. Fix anything. Except your sleep schedule."},
-  {"text": "The mess. Fully fitted galley. Sit, eat, stare into deep space. Same as Monday, but cooler."},
-  {"text": "Medical bay. Clean, bright, hospital grade. Stub your toe on the stairs? Help is twelve steps away."},
-  {"text": "And the engine room. A fusion fission hybrid reactor. Unlimited electricity, no bills, no power cuts. Ever. Your electricity board will write letters. Do not open them."},
-  {"text": "The crew corridor. Cabins on both sides. Quiet neighbourhood, very gated community."},
-  {"text": "Crew cabin. Bed, desk, shelf. Compact, cosy. Studio apartment energy."},
-  {"text": "And finally, the bridge. Panoramic glass, pilot stations, and the best view in the universe. Step forward. Yes. Feel that? That is ownership."},
-  {"text": "The lobby. Meetings, snacks, villain monologues."},
-  {"text": "Pilot seats. Two of them. Bring a friend. Or a cat."},
-  {"text": "So, what do you say? Titanium skin, reactor included, zero rent. Price on request. Serious buyers only. Window shoppers, the exit is that way. About fifty metres down."}
+  {
+   "text": "Ladies and gentlemen, welcome to the hottest listing in the galaxy. Fifty-eight metres of pure titanium luxury. Fully furnished, ocean view, and yes, before you ask, it does fly. Parking? It IS the parking."
+  },
+  {
+   "text": "Look at that underside. Ceramic tiles, darling. Most homes have a basement. This one has re-entry protection."
+  },
+  {
+   "text": "From the top, a clean roof. No leaks, no pigeons, and the nearest neighbour is roughly four light years away."
+  },
+  {
+   "text": "And the crown jewel, the dome. Freshly blended, smooth as butter. My architect cried. I cried. The bank also cried, but for other reasons."
+  },
+  {
+   "text": "Engines! Gold foil, fusion powered. Zero to Mars before your coffee gets cold."
+  },
+  {
+   "text": "The nose, carbon fibre. Aerodynamic, and frankly, more attractive than my cousin."
+  },
+  {
+   "text": "Wings on both sides. No extra charge. Try getting that from a downtown condo."
+  },
+  {
+   "text": "Your private entrance. A glowing hatch with stairs. Guests will think you are very important. Let them."
+  },
+  {
+   "text": "The entry deck. Room for luggage, bicycles, or the in-laws, if they promise to stay down here."
+  },
+  {
+   "text": "And now, the heart of the home. A fourteen metre central hall. Flat floor, no trip hazards, I checked personally. Twice. Doors to every room, like a palace, but with fewer stairs. Well. Some stairs."
+  },
+  {
+   "text": "Look up. Seven and a half metres of ceiling. You could fit a giraffe in here. Please do not fit a giraffe in here."
+  },
+  {
+   "text": "The grand staircase. Curved, glass railings. Perfect for dramatic entrances."
+  },
+  {
+   "text": "Upstairs, the gallery. A full walking ring with a library, a lab, a workshop, and an ops room. Books, science, tools, and a room for pressing buttons. Everything a man needs to avoid his chores."
+  },
+  {
+   "text": "The workshop. Fix anything. Except your sleep schedule."
+  },
+  {
+   "text": "The mess. Fully fitted galley. Sit, eat, stare into deep space. Same as Monday, but cooler."
+  },
+  {
+   "text": "Medical bay. Clean, bright, hospital grade. Stub your toe on the stairs? Help is twelve steps away."
+  },
+  {
+   "text": "And the engine room. A fusion fission hybrid reactor. Unlimited electricity, no bills, no blackouts. Ever. Your utility company will write letters. Do not open them."
+  },
+  {
+   "text": "The crew corridor. Cabins on both sides. Quiet neighbourhood, very gated community."
+  },
+  {
+   "text": "Crew cabin. Bed, desk, shelf. Compact, cosy. Studio apartment energy."
+  },
+  {
+   "text": "And finally, the bridge. Panoramic glass, pilot stations, and the best view in the universe. Step forward. Yes. Feel that? That is ownership."
+  },
+  {
+   "text": "The lobby. Meetings, snacks, villain monologues."
+  },
+  {
+   "text": "Pilot seats. Two of them. Bring a friend. Or a cat."
+  },
+  {
+   "text": "So, what do you say? Titanium skin, reactor included, zero rent. Price on request. Serious buyers only. Window shoppers, the exit is that way. About fifty metres down."
+  }
  ]
 }
