@@ -75,6 +75,24 @@ def v20_sponsons():
             if o.name == nm + 'SponsonStripe': _rm(o)
         print('MODEL v20 sponson', nm, 'x', round(X0, 2), round(X1, 2), 'y', round(Yi, 2), round(Yo, 2), 'z', round(Zb, 2), round(Zt, 2), 'blister a b c', round(a, 2), round(b, 2), round(c, 2))
 
+# 2b. (user 2026-11-10: "absolutely remove them") side pods gone: Mess + Med rooms, sponson shells and window parts deleted, hall doorways sealed
+def v20_remove_pods():
+    keep = {'Hull', 'HullLite', 'InnerSkin', 'KeelFairing', 'Pad', 'Cam', 'Sun'}
+    gone = []
+    for o in list(bpy.data.objects):
+        if o.name in keep or o.type not in ('MESH', 'LIGHT', 'CURVE', 'EMPTY'): continue
+        p_ = o.parent
+        while p_ is not None and p_.name not in ('Hull',): p_ = p_.parent
+        if p_ is not None: continue
+        lo, hi = _wb(o); ay0 = min(abs(lo.y), abs(hi.y)) if lo.y * hi.y > 0 else 0.0; ay1 = max(abs(lo.y), abs(hi.y))
+        inside = lo.x > -7.7 and hi.x < 1.7 and ay0 > 7.45 and ay1 < 12.2 and lo.z > Z0 - .35 and hi.z < Z0 + 3.1
+        named = o.name.startswith(('MessSponson', 'MedSponson', 'MessThreshold', 'MedThreshold'))
+        if inside or named: gone.append(o.name); _rm(o)
+    for s_ in (1, -1):
+        Box(f'PodSeal{s_}', (HC.x, s_ * 7.06, Z0 + 1.2), (1.75, .26, 2.42), M_HW)
+        Box(f'PodSealTrim{s_}', (HC.x, s_ * (7.06 - .135), Z0 + 1.2), (1.6, .01, 2.25), M_SEAM)
+    print('MODEL v20 pods removed', len(gone), sorted(gone))
+
 # 3. bridge interior tucked inside the nose skin (deck, plate, lining, skirts, frames): every vertex clamped 0.1 m inside the hull
 def _subdiv_to(o, edge=.3):
     me_ = o.data; bm = _bm.new(); bm.from_mesh(me_)
@@ -252,4 +270,4 @@ def v20_reactor():
         lo_ = bpy.data.objects.new(f'TokLight{k}', ld); col.objects.link(lo_); lo_.location = (XT + R * math.cos(a), YT + R * math.sin(a), ZT + .9)
     print('MODEL v20 reactor: removed old core parts', gone, 'tokamak at', XT, YT, round(ZT, 2), 'floor', round(zf, 2), 'ceiling', round(zc, 2), 'bulkhead x', round(xf, 2))
 
-for nm_, fn_ in (('planks', v20_planks), ('sponsons', v20_sponsons), ('nose', v20_nose), ('hatch', v20_hatch_closed), ('keel deck', v20_keel_deck), ('reactor', v20_reactor)): _v20(nm_, fn_)
+for nm_, fn_ in (('planks', v20_planks), ('remove pods', v20_remove_pods), ('nose', v20_nose), ('hatch', v20_hatch_closed), ('keel deck', v20_keel_deck), ('reactor', v20_reactor)): _v20(nm_, fn_)
